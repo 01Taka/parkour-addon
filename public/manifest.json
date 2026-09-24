@@ -1,0 +1,37 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Parkour Addon 1, 0, 21",
+    "description": "様々なパルクールを追加するアドオン",
+    "uuid": "8b51d45c-06d9-48fa-bb6b-a2c38d175401",
+    "version": [
+      1,
+      0,
+      21
+    ],
+    "min_engine_version": [
+      1,
+      20,
+      0
+    ]
+  },
+  "modules": [
+    {
+      "type": "script",
+      "language": "javascript",
+      "uuid": "7a35e82b-65e1-45f8-8a21-729f8c125602",
+      "version": [
+        1,
+        0,
+        21
+      ],
+      "entry": "scripts/index.js"
+    }
+  ],
+  "dependencies": [
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.8.0"
+    }
+  ]
+}

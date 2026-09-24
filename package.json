@@ -1,0 +1,22 @@
+{
+  "name": "parkour-addon",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "versionup": "node scripts/version-up.mjs",
+    "pack": "pnpm run versionup && pnpm run build && node scripts/pack.mjs",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/archiver": "^8.0.0",
+    "archiver": "^8.0.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  },
+  "dependencies": {
+    "@minecraft/server": "^2.10.0"
+  }
+}
