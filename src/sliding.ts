@@ -36,6 +36,13 @@ interface SlidingState {
 const activeSlides = new Map<string, SlidingState>();
 
 /**
+ * プレイヤーがスライディング（またはスライディングジャンプ）中であるかを判定します。
+ */
+export function isSliding(playerId: string): boolean {
+  return activeSlides.has(playerId);
+}
+
+/**
  * 殴ったブロックが足元（足元から2m以内かつ足元〜その1マス下）であるか判定します。
  */
 function isGroundBlock(player: Player, blockLoc: Vector3): boolean {
@@ -118,6 +125,8 @@ export function slidingMain(): void {
         // 通常スライディング: 空中にいる間はタイマーをリセットして持続時間を延長
         if (!player.isOnGround) {
           slideState.remainingTicks = SLIDE_DURATION_TICKS;
+          // 通常スライディング中に空中にいる場合、斜面に沿わせるため下方向の追加インパルスを付与
+          impulse.y -= SLIDE_DOWNWARD_IMPULSE;
         } else {
           slideState.remainingTicks -= 1;
           if (slideState.remainingTicks <= 0) {
