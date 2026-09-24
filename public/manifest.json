@@ -1,13 +1,13 @@
 {
   "format_version": 2,
   "header": {
-    "name": "Parkour Addon 1, 0, 64",
+    "name": "Parkour Addon 1, 0, 65",
     "description": "様々なパルクールを追加するアドオン",
     "uuid": "8b51d45c-06d9-48fa-bb6b-a2c38d175401",
     "version": [
       1,
       0,
-      64
+      65
     ],
     "min_engine_version": [
       1,
@@ -23,7 +23,7 @@
       "version": [
         1,
         0,
-        64
+        65
       ],
       "entry": "scripts/index.js"
     }

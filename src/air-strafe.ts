@@ -55,22 +55,6 @@ export function isHoldingFeather(player: Player): boolean {
   }
 }
 
-/**
- * デバッグ用メッセージ出力（チャット欄およびログ出力）
- */
-function debugLog(message: string, player?: Player): void {
-  const formatted = `§e[AirStrafe]§r ${message}`;
-  console.warn(formatted);
-  try {
-    if (player && player.isValid) {
-      player.sendMessage(formatted);
-    } else {
-      world.sendMessage(formatted);
-    }
-  } catch (err) {
-    console.error("debugLog error:", err);
-  }
-}
 
 // ==========================================
 // 状態管理
@@ -87,8 +71,6 @@ interface AirStrafeState {
   originalSpeed: number;
   /** すでに空中に離陸したか */
   hasLeftGround: boolean;
-  /** 前Tickの MovementVector.x 入力値（新規タップ検知用） */
-  prevInputX: number;
   /** 曲がる方向（true: 左 / 反時計回り、false: 右 / 時計回り） */
   isLeft?: boolean;
   /** ジャンプ後の初速計測待機Tick数 */
@@ -171,20 +153,12 @@ export function airStrafeMain(): void {
 
       // スライディングが開始された場合はキャンセル
       if (isSliding(player.id)) {
-        debugLog(
-          `終了: スライディング検知 (${state.phase === "active" ? "旋回中断" : "受付中断"})`,
-          player,
-        );
         activeAirStrafes.delete(player.id);
         continue;
       }
 
       // 羽を持っている場合はキャンセル（検証用）
       if (isHoldingFeather(player)) {
-        debugLog(
-          `終了: 羽所持 (${state.phase === "active" ? "旋回中断" : "受付中断"})`,
-          player,
-        );
         activeAirStrafes.delete(player.id);
         continue;
       }
@@ -193,11 +167,6 @@ export function airStrafeMain(): void {
       if (!player.isOnGround) {
         state.hasLeftGround = true;
       } else if (state.hasLeftGround) {
-        if (state.phase === "active") {
-          debugLog("終了: 着地", player);
-        } else {
-          debugLog("受付終了: A/D入力前に着地しました", player);
-        }
         activeAirStrafes.delete(player.id);
         continue;
       }
@@ -226,21 +195,11 @@ export function airStrafeMain(): void {
             state.remainingTicks = STRAFE_DURATION_TICKS;
             state.originalSpeed = currentSpeed;
             state.isLeft = isLeft;
-
-            debugLog(
-              `開始: ${isLeft ? "左(A)" : "右(D)"} (初速: ${state.originalSpeed.toFixed(2)})`,
-              player,
-            );
           }
         }
 
-        state.prevInputX = currentInputX;
         state.remainingTicks -= 1;
         if (state.remainingTicks <= 0) {
-          debugLog(
-            `受付終了: 入力タイムアウト (最終inputX: ${currentInputX.toFixed(2)})`,
-            player,
-          );
           activeAirStrafes.delete(player.id);
           continue;
         }
@@ -270,12 +229,7 @@ export function airStrafeMain(): void {
           // 前進成分（cos値。真後ろを向いている場合は除外）
           const cosForward = dirX * viewForward.x + dirZ * viewForward.z;
 
-          if (cosForward <= 0) {
-            debugLog(
-              `Tick[${state.remainingTicks}] 失敗 (後ろ向き: cos=${cosForward.toFixed(2)})`,
-              player,
-            );
-          } else if (sinDiff <= STRAFE_SIN_DIFF_THRESHOLD) {
+          if (cosForward > 0 && sinDiff <= STRAFE_SIN_DIFF_THRESHOLD) {
             // 成功ボーナスを加算して速度を少し上昇
             state.originalSpeed += STRAFE_SPEED_BONUS_PER_TICK;
 
@@ -291,24 +245,7 @@ export function airStrafeMain(): void {
             targetX = turnedDir.x * state.originalSpeed;
             targetZ = turnedDir.z * state.originalSpeed;
             appliedTurn = true;
-
-            debugLog(
-              `Tick[${state.remainingTicks}] 成功 (sin: ${sinDiff.toFixed(2)} <= ${STRAFE_SIN_DIFF_THRESHOLD}, 速度: ${state.originalSpeed.toFixed(2)})`,
-              player,
-            );
-          } else {
-            debugLog(
-              `Tick[${state.remainingTicks}] 失敗 (sin: ${sinDiff.toFixed(2)} > ${STRAFE_SIN_DIFF_THRESHOLD})`,
-              player,
-            );
           }
-        } else {
-          const reason = !hasInput
-            ? `入力なし/解除 (inputX: ${currentInputX.toFixed(2)})`
-            : !viewForward
-              ? "視線ベクトル取得失敗"
-              : "水平速度ゼロ";
-          debugLog(`Tick[${state.remainingTicks}] 失敗 (${reason})`, player);
         }
 
         // インパルスを受け取らなかった場合も、現在の進行方向のまま元の速度を維持
@@ -334,7 +271,6 @@ export function airStrafeMain(): void {
 
         state.remainingTicks -= 1;
         if (state.remainingTicks <= 0) {
-          debugLog("終了: 完了", player);
           activeAirStrafes.delete(player.id);
         }
       }
@@ -354,32 +290,14 @@ export function airStrafeMain(): void {
 
         const currentVelocity = player.getVelocity();
 
-        // 発動条件チェックと失敗ログ
-        if (!player.isSprinting) {
-          debugLog("発動失敗: スプリント(ダッシュ)中ではありません", player);
+        // 発動条件チェック
+        if (
+          !player.isSprinting ||
+          currentVelocity.y <= 0 ||
+          isSliding(player.id) ||
+          isHoldingFeather(player)
+        ) {
           return;
-        }
-        if (currentVelocity.y <= 0) {
-          debugLog(
-            `発動失敗: 上方向の速度がありません (vy=${currentVelocity.y.toFixed(3)})`,
-            player,
-          );
-          return;
-        }
-        if (isSliding(player.id)) {
-          debugLog("発動失敗: スライディング中です", player);
-          return;
-        }
-        if (isHoldingFeather(player)) {
-          debugLog("発動失敗: 羽を持っているため無効化されています", player);
-          return;
-        }
-
-        let currentInputX = 0;
-        try {
-          currentInputX = player.inputInfo.getMovementVector().x;
-        } catch {
-          // ignore
         }
 
         // ジャンプ時はストレイフの予約を行い、指定Tick待機後に初速を計測して発動
@@ -388,7 +306,6 @@ export function airStrafeMain(): void {
           remainingTicks: AIR_STRAFE_WINDOW_TICKS,
           originalSpeed: 0,
           hasLeftGround: true,
-          prevInputX: currentInputX,
           delayTicks: STRAFE_START_DELAY_TICKS,
         });
       }
