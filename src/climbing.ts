@@ -9,6 +9,7 @@ import {
 import { parkourEventHandler } from "./parkour-event-handler.class";
 import { calculatePlayerToBlockDistance } from "./positional.utils";
 import { calculateVelocityImpulse } from "./impulse.utils";
+import { hasBlockCollision } from "./collision.utils";
 
 // ==========================================
 // 定数・パラメータ設定
@@ -70,29 +71,6 @@ export function calculateTargetVelocityY(verticalTop: number): number {
   );
 }
 
-/**
- * 対象ブロックの直上(y+1)が透過ブロック（空気・非固体・通り抜け可能ブロック）であるかを判定します。
- */
-export function isAboveBlockTransparent(hitBlock: Block): boolean {
-  try {
-    const aboveBlock = hitBlock.above(1);
-    if (!aboveBlock) return false;
-
-    // 空気なら確実に透過
-    if (aboveBlock.isAir) return true;
-
-    // getBlockAbove で固体ブロックを検出。y+1 が固体ブロックなら壁が続いているため非透過
-    const solidBlockAbove = hitBlock.dimension.getBlockAbove(hitBlock.location);
-    if (solidBlockAbove && solidBlockAbove.y === hitBlock.y + 1) {
-      return false;
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // ==========================================
 // アクション判定・実行
 // ==========================================
@@ -147,7 +125,7 @@ export function getClimbUpFailReasons(
     }
 
     // 側面ヒット時: 対象ブロックの上のブロックが透過ブロックであることを確認
-    if (!isAboveBlockTransparent(hitBlock)) {
+    if (hasBlockCollision(hitBlock.above(1))) {
       const aboveType = hitBlock.above(1)?.typeId ?? "unknown";
       reasons.push(`直上ブロック非透過(${aboveType})`);
     }
