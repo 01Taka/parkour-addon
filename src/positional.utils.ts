@@ -19,12 +19,19 @@ export interface AABBDistanceResult {
     dz: number;
   };
   /**
-   * 符号付きの垂直オフセット:
-   * - 正: プレイヤーの足元がブロック上面より上 (y - maxY)
-   * - 負: プレイヤーの足元がブロック下面より下 (y - minY)
-   * - 0: プレイヤーの足元がブロックの高さの範囲内
+   * ブロック上面を基準とした垂直距離 (point.y - maxY):
+   * - 正: 上面より上
+   * - 負: 上面より下 (AABB範囲内含む)
+   * - 0: 上面と一致
    */
-  signedVertical: number;
+  verticalTop: number;
+  /**
+   * ブロック下面を基準とした垂直距離 (point.y - minY):
+   * - 正: 下面より上 (AABB範囲内含む)
+   * - 負: 下面より下
+   * - 0: 下面と一致
+   */
+  verticalBottom: number;
 }
 
 /**
@@ -47,19 +54,16 @@ export function calculatePointToAABBDistance(
   const vertical = dy;
   const distance = Math.hypot(dx, dy, dz);
 
-  let signedVertical = 0;
-  if (point.y > aabb.max.y) {
-    signedVertical = point.y - aabb.max.y;
-  } else if (point.y < aabb.min.y) {
-    signedVertical = point.y - aabb.min.y;
-  }
+  const verticalTop = point.y - aabb.max.y;
+  const verticalBottom = point.y - aabb.min.y;
 
   return {
     horizontal,
     vertical,
     distance,
     delta: { dx, dy, dz },
-    signedVertical,
+    verticalTop,
+    verticalBottom,
   };
 }
 

@@ -46,13 +46,13 @@ export function isSliding(playerId: string): boolean {
  * 殴ったブロックが足元（足元から2m以内かつ足元〜その1マス下）であるか判定します。
  */
 function isGroundBlock(player: Player, blockLoc: Vector3): boolean {
-  const { distance, signedVertical } = calculatePlayerToBlockDistance(
+  const { distance, verticalTop } = calculatePlayerToBlockDistance(
     player,
     blockLoc,
   );
 
-  // y座標が足元〜その一マス下のブロック (0 <= signedVertical <= 1.0)
-  const isYValid = signedVertical >= 0 && signedVertical <= 1.0;
+  // y座標が足元〜その一マス下のブロック (0 <= verticalTop <= 1.0)
+  const isYValid = verticalTop >= 0 && verticalTop <= 1.0;
 
   return isYValid && distance <= 2.0;
 }
@@ -118,6 +118,7 @@ export function slidingMain(): void {
         },
         current: player.getVelocity(),
         dragXZ: player.isOnGround ? "ground" : "air",
+        stiffness: 20,
       });
 
       // フェーズごとの持続時間・終了判定

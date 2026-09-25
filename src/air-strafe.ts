@@ -55,7 +55,6 @@ export function isHoldingFeather(player: Player): boolean {
   }
 }
 
-
 // ==========================================
 // 状態管理
 // ==========================================
@@ -128,7 +127,6 @@ function getViewForward(player: Player): { x: number; z: number } | null {
     z: view.z / horizontalLength,
   };
 }
-
 
 // ==========================================
 // メインロジック
@@ -264,7 +262,6 @@ export function airStrafeMain(): void {
           current: currentVelocity,
           dragXZ: "air",
           gravity: false,
-          stiffness: 1000, // 目標速度に完全追従させる
         });
 
         player.applyImpulse(impulse);

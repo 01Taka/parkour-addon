@@ -43,8 +43,8 @@ export interface CalculateVelocityImpulseParams {
   current: Vector3;
   /** 経過時間（Tick単位。デフォルト: 1.0） */
   deltaTimeTick?: number;
-  /** 追従の鋭さ。デフォルト: 20.0 */
-  stiffness?: number;
+  /** 追従の鋭さ。nullの場合は即座に目標速度に到達（blend = 1.0）。デフォルト: null */
+  stiffness?: number | null;
   /** 1Tickあたりに加算できる最大速度変化量（リミッター） */
   maxAcceleration?: number;
 
@@ -75,7 +75,7 @@ export function calculateVelocityImpulse({
   target,
   current,
   deltaTimeTick = 1.0,
-  stiffness = 20.0,
+  stiffness = null,
   maxAcceleration,
   gravity = true,
   dragY = "air",
@@ -98,8 +98,11 @@ export function calculateVelocityImpulse({
   let adjustedTargetZ =
     target.z !== null && target.z !== undefined ? target.z / finalDragXZ : null;
 
-  // deltaTime を考慮した追従率（指数減衰補間）
-  const blend = 1.0 - Math.exp(-stiffness * (deltaTimeTick / 20.0));
+  // deltaTime を考慮した追従率（指数減衰補間）。stiffness が null の場合は 1.0（即座に到達）
+  const blend =
+    stiffness === null
+      ? 1.0
+      : 1.0 - Math.exp(-stiffness * (deltaTimeTick / 20.0));
 
   // 各軸の差分に追従率を乗算
   let impulseX =
