@@ -9,7 +9,10 @@ import {
 import { parkourEventHandler } from "./parkour-event-handler.class";
 import { calculatePlayerToBlockDistance } from "./positional.utils";
 import { calculateVelocityImpulse } from "./impulse.utils";
-import { hasBlockCollision } from "./collision.utils";
+import {
+  hasBlockCollisionFromAirFaces,
+  hasBlockCollisionFromFace,
+} from "./collision.utils";
 
 // ==========================================
 // 定数・パラメータ設定
@@ -22,11 +25,14 @@ import { hasBlockCollision } from "./collision.utils";
  */
 const EFFECTIVE_GRAVITY = 0.071;
 
-/** ブロック上面を超えるマージン高さ（確実に上面に乗るための余裕。0.15〜0.2m） */
+/** ブロック上面を超えるマージン高さ（確実に上面に乗るための余裕） */
 export const CLIMB_HEIGHT_MARGIN = 0.18;
 
 /** 目標垂直初速度の最小値（浅い段差でもスムーズに登るための下限） */
 export const MIN_TARGET_VELOCITY_Y = 0.28;
+
+/** 目標垂直初速度の最大値（安全リミッター: -1.6mからの登りあがりにも対応） */
+export const MAX_TARGET_VELOCITY_Y = 0.55;
 
 /** 側面ヒット時の verticalTop 許容下限 */
 export const CLIMB_SIDE_MIN_VERTICAL_TOP = -1.0;
@@ -37,8 +43,12 @@ export const CLIMB_TOP_MIN_VERTICAL_TOP = -1.6;
 /** verticalTopの許容上限（共通: 0以下） */
 export const CLIMB_MAX_VERTICAL_TOP = 0;
 
-/** 目標垂直初速度の最大値（安全リミッター: -1.6mからの登りあがりにも対応） */
-export const MAX_TARGET_VELOCITY_Y = 0.55;
+/** ヒットブロックとの最大水平距離 */
+export const CLIMB_MAX_HORIZONTAL_DISTANCE = 0.9;
+
+/** Y方向許容速度範囲 */
+export const CLIMB_MIN_VELOCITY_Y = -0.6;
+export const CLIMB_MAX_VELOCITY_Y = 0.3;
 
 /** のぼりあがり時の前方目標水平速度 (ブロック/tick) */
 export const CLIMB_FORWARD_SPEED = 0.22;
@@ -76,77 +86,6 @@ export function calculateTargetVelocityY(verticalTop: number): number {
 // ==========================================
 
 /**
- * のぼりあがりの発動可否を判定し、条件を満たさない理由の一覧を返します。
- * 配列が空であれば発動条件を満たしています。
- */
-export function getClimbUpFailReasons(
-  player: Player,
-  hitBlock: Block,
-  hitFace: Direction,
-  horizontal: number,
-  verticalTop: number,
-  vel: Vector3,
-): string[] {
-  const reasons: string[] = [];
-
-  // すでに空中で登りあがり済みの場合、着地するまで再発動不可
-  if (hasUsedClimb.has(player.id)) {
-    reasons.push("未着地(クール中)");
-  }
-
-  // ヒットしたブロックとのxz距離(horizontal)が0.9以内
-  if (horizontal > 0.9) {
-    reasons.push(`hor距離(${horizontal.toFixed(2)} > 0.9)`);
-  }
-
-  // ブロックの側面かつverticalTop が-1以上 || ブロックの上面かつverticalTop が-1.6以上（0以下は共通）
-  const isTopFace = hitFace === Direction.Up;
-  const isSideFace =
-    hitFace === Direction.North ||
-    hitFace === Direction.South ||
-    hitFace === Direction.East ||
-    hitFace === Direction.West;
-
-  if (verticalTop > CLIMB_MAX_VERTICAL_TOP) {
-    reasons.push(
-      `verTop超過(${verticalTop.toFixed(2)} > ${CLIMB_MAX_VERTICAL_TOP})`,
-    );
-  } else if (isTopFace) {
-    if (verticalTop < CLIMB_TOP_MIN_VERTICAL_TOP) {
-      reasons.push(
-        `上面verTop(${verticalTop.toFixed(2)}: ${CLIMB_TOP_MIN_VERTICAL_TOP}〜${CLIMB_MAX_VERTICAL_TOP})`,
-      );
-    }
-  } else if (isSideFace) {
-    if (verticalTop < CLIMB_SIDE_MIN_VERTICAL_TOP) {
-      reasons.push(
-        `側面verTop(${verticalTop.toFixed(2)}: ${CLIMB_SIDE_MIN_VERTICAL_TOP}〜${CLIMB_MAX_VERTICAL_TOP})`,
-      );
-    }
-
-    // 側面ヒット時: 対象ブロックの上のブロックが透過ブロックであることを確認
-    if (hasBlockCollision(hitBlock.above(1))) {
-      const aboveType = hitBlock.above(1)?.typeId ?? "unknown";
-      reasons.push(`直上ブロック非透過(${aboveType})`);
-    }
-  } else {
-    reasons.push(`対象外ヒット面(${hitFace})`);
-  }
-
-  // 地面に足がついていない
-  if (player.isOnGround) {
-    reasons.push("接地中");
-  }
-
-  // y方向の速度が-0.6以上0.3以下
-  if (vel.y < -0.6 || vel.y > 0.3) {
-    reasons.push(`y速度(${vel.y.toFixed(2)})`);
-  }
-
-  return reasons;
-}
-
-/**
  * のぼりあがりアクションを実行します。
  */
 export function executeClimbUp(
@@ -178,12 +117,63 @@ export function executeClimbUp(
     dragXZ: "air",
   });
 
-  // インパルスを適用
   player.applyImpulse(impulse);
-
-  // 空中での多重発動を防止
   hasUsedClimb.add(player.id);
-  player.sendMessage("§a[Climb] のぼりあがり");
+}
+
+/**
+ * のぼりあがりの発動可否を判定し、条件を満たす場合アクションを実行します。
+ * コストが低く不発頻度が高い判定から順に評価して早期リターンします。
+ */
+export function tryClimbUp(
+  player: Player,
+  hitBlock: Block,
+  hitFace: Direction,
+): void {
+  // 1. 接地判定（最頻出かつプロパティ参照のみで最軽量）
+  if (player.isOnGround) return;
+
+  // 2. 空中での多重発動防止（Setの高速ルックアップ）
+  if (hasUsedClimb.has(player.id)) return;
+
+  // 3. 対象外ヒット面（下面ヒットは登り不可）
+  if (hitFace === Direction.Down) return;
+
+  // 4. Y方向の速度判定（位置計算前に除外）
+  const vel = player.getVelocity();
+  if (vel.y < CLIMB_MIN_VELOCITY_Y || vel.y > CLIMB_MAX_VELOCITY_Y) return;
+
+  // 5. ブロックとの距離・高さ判定
+  const { horizontal, verticalTop } = calculatePlayerToBlockDistance(
+    player,
+    hitBlock.location,
+  );
+
+  // 5-1. 水平距離
+  if (horizontal > CLIMB_MAX_HORIZONTAL_DISTANCE) return;
+
+  // 5-2. 垂直位置の共通範囲チェック
+  if (
+    verticalTop < CLIMB_TOP_MIN_VERTICAL_TOP ||
+    verticalTop > CLIMB_MAX_VERTICAL_TOP
+  ) {
+    return;
+  }
+
+  // 6. 殴ったブロック自体の固体（当たり判定）判定
+  if (!hasBlockCollisionFromFace(hitBlock, hitFace)) return;
+
+  // 7. ヒット面別の判定
+  if (hitFace !== Direction.Up) {
+    // 側面ヒット時: -1.0 以上であること
+    if (verticalTop < CLIMB_SIDE_MIN_VERTICAL_TOP) return;
+
+    // 側面ヒット時のみ: 直上のブロックが透過（通り抜け可能）か判定（レイキャストを伴うため最深部で評価）
+    if (hasBlockCollisionFromAirFaces(hitBlock.above(1))) return;
+  }
+
+  // すべての条件を満たした場合に登りあがりを実行
+  executeClimbUp(player, verticalTop, vel);
 }
 
 // ==========================================
@@ -196,12 +186,7 @@ export function climbingMain() {
     if (hasUsedClimb.size === 0) return;
 
     for (const player of world.getAllPlayers()) {
-      if (!player.isValid) {
-        hasUsedClimb.delete(player.id);
-        continue;
-      }
-
-      if (player.isOnGround) {
+      if (!player.isValid || player.isOnGround) {
         hasUsedClimb.delete(player.id);
       }
     }
@@ -209,30 +194,7 @@ export function climbingMain() {
 
   // 2. ブロック殴打イベント購読
   parkourEventHandler.onHitBlock.subscribe(({ player, hitBlock, hitFace }) => {
-    const { distance, horizontal, verticalTop } =
-      calculatePlayerToBlockDistance(player, hitBlock.location);
-    const vel = player.getVelocity();
-
-    // テスト用メッセージ
-    player.sendMessage(
-      `dis: ${distance.toFixed(2)}, hor: ${horizontal.toFixed(2)},  ver: ${verticalTop.toFixed(2)}, y: ${vel.y.toFixed(2)}, (${vel.x.toFixed(2)}, ${vel.z.toFixed(2)})`,
-    );
-
-    // 1. のぼりあがり判定と理由出力
-    const failReasons = getClimbUpFailReasons(
-      player,
-      hitBlock,
-      hitFace,
-      horizontal,
-      verticalTop,
-      vel,
-    );
-
-    if (failReasons.length === 0) {
-      executeClimbUp(player, verticalTop, vel);
-    } else {
-      player.sendMessage(`§c[Climb NG] ${failReasons.join(", ")}`);
-    }
+    tryClimbUp(player, hitBlock, hitFace);
   });
 
   // 3. プレイヤー切断時のクリーンアップ
