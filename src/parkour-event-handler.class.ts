@@ -3,6 +3,7 @@ import {
   Player,
   Block,
   EquipmentSlot,
+  Direction,
 } from "@minecraft/server";
 
 /**
@@ -13,6 +14,8 @@ export interface ParkourHitBlockEvent {
   readonly player: Player;
   /** 殴打された対象ブロック（確実に存在） */
   readonly hitBlock: Block;
+
+  readonly hitFace: Direction;
 }
 
 /**
@@ -81,7 +84,8 @@ export class ParkourEventHandler {
   public readonly onHitBlock = new ParkourEventSignal<ParkourHitBlockEvent>();
 
   /** 腕スイングトリガー（空中やブロックのない場所でも発火） */
-  public readonly onSwingStart = new ParkourEventSignal<ParkourSwingStartEvent>();
+  public readonly onSwingStart =
+    new ParkourEventSignal<ParkourSwingStartEvent>();
 
   private static readonly _instance = new ParkourEventHandler();
 
@@ -104,7 +108,9 @@ export class ParkourEventHandler {
       const equippable = player.getComponent("minecraft:equippable");
       const mainHandItem = equippable
         ? equippable.getEquipment(EquipmentSlot.Mainhand)
-        : player.getComponent("minecraft:inventory")?.container?.getItem(player.selectedSlotIndex);
+        : player
+            .getComponent("minecraft:inventory")
+            ?.container?.getItem(player.selectedSlotIndex);
 
       // 素手（何も持っていない）
       if (!mainHandItem) {
@@ -133,6 +139,7 @@ export class ParkourEventHandler {
           this.onHitBlock.dispatch({
             player,
             hitBlock: event.hitBlock,
+            hitFace: event.blockFace,
           });
         });
       }
