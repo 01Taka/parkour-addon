@@ -6,13 +6,13 @@ import {
   type Player,
   type Vector3,
 } from "@minecraft/server";
-import { parkourEventHandler } from "./parkour-event-handler.class";
-import { calculatePlayerToBlockDistance } from "./positional.utils";
-import { calculateVelocityImpulse } from "./impulse.utils";
+import { parkourEventHandler } from "../utils/parkour-event-handler.class";
+import { calculatePlayerToBlockDistance } from "../utils/positional.utils";
+import { calculateVelocityImpulse } from "../utils/impulse.utils";
 import {
   hasBlockCollisionFromAirFaces,
   hasBlockCollisionFromFace,
-} from "./collision.utils";
+} from "../utils/collision.utils";
 
 // ==========================================
 // 定数・パラメータ設定

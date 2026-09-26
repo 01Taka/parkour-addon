@@ -6,9 +6,9 @@ import {
   Player,
   type Vector3,
 } from "@minecraft/server";
-import { calculateVelocityImpulse } from "./impulse.utils";
-import { calculatePlayerToBlockDistance } from "./positional.utils";
-import { parkourEventHandler } from "./parkour-event-handler.class";
+import { calculateVelocityImpulse } from "../utils/impulse.utils";
+import { calculatePlayerToBlockDistance } from "../utils/positional.utils";
+import { parkourEventHandler } from "../utils/parkour-event-handler.class";
 
 /** スライディング時に加算する速度 (ブロック/tick) */
 export const SLIDE_ADDITIONAL_SPEED = 0.25;

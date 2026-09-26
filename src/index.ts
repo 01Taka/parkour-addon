@@ -1,6 +1,6 @@
-import { slidingMain } from "./sliding";
-import { airStrafeMain } from "./air-strafe";
-import { climbingMain } from "./climbing";
+import { slidingMain } from "./addons/sliding";
+import { airStrafeMain } from "./addons/air-strafe";
+import { climbingMain } from "./addons/climbing";
 
 slidingMain();
 airStrafeMain();
