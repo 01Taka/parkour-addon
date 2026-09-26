@@ -3,6 +3,7 @@ import {
   system,
   Player,
   EntityDamageCause,
+  EquipmentSlot,
   type BlockRaycastOptions,
   type Vector3,
 } from "@minecraft/server";
@@ -44,9 +45,6 @@ export const ROLL_IMPULSE_FORWARD = 0.5;
 
 /** ロール発動時の下方向インパルス強度 */
 export const ROLL_IMPULSE_DOWNWARD = 0.15;
-
-/** デバッグ用: 真下レイ未ヒット時に何メートル先ならヒットするかを計測するための最大探索距離 */
-export const ROLL_DEBUG_RAY_MAX_DISTANCE = 12.0;
 
 /**
  * 下方向へのレイキャスト設定
@@ -96,189 +94,76 @@ export function isPkRollActive(player: Player): boolean {
 }
 
 // ==========================================
-// アクション判定・実行
+// ダメージ・エンチャント補正計算
 // ==========================================
 
 /**
- * パルクールロールの発動可否を判定し、条件を満たす場合に有効状態にします。
- * 落下ダメージ保留中の場合は、保留ダメージに対して軽減とロールインパルスを適用します。
- * 発動条件のうち満たされないものがあれば、すべて一覧にしてプレイヤーへメッセージを送信します。
+ * プレイヤーの防具エンチャント（落下耐性・ダメージ軽減）および耐性エフェクトから
+ * 落下ダメージに対する被ダメージ倍率を算出します。
  *
- * 発動条件:
- * 1. プレイヤーのY方向速度が負であること (vel.y < 0) ※保留ダメージがある場合は免除
- * 2. クールダウンが経過していること
- * 3. かかと位置から下方向のレイが固体ブロックにヒットすること
- * 4. 視線が水平より下を向いていること (viewDir.y <= ROLL_VIEW_MAX_DIRECTION_Y)
- * 5. 視線方向XZと移動速度XZのズレ（sin）が許容閾値以内であること
+ * @param player 対象プレイヤー
+ * @returns 実際の被ダメージ倍率
  */
-export function tryTriggerPkRoll(player: Player): boolean {
-  const currentTick = system.currentTick;
-  const state = rollStates.get(player.id);
+export function calculateFallDamageMultiplier(player: Player): number {
+  let totalEPF = 0;
 
-  // すでにロール発動可能時間（有効状態）中である場合は重複発火やエラー出力をスキップ
-  if (state && currentTick <= state.activeUntilTick) {
-    return false;
-  }
+  const equippable = player.getComponent("minecraft:equippable");
+  if (equippable) {
+    const armorSlots = [
+      EquipmentSlot.Head,
+      EquipmentSlot.Chest,
+      EquipmentSlot.Legs,
+      EquipmentSlot.Feet,
+    ];
 
-  const pending = pendingFallDamages.get(player.id);
-  const hasPendingDamage =
-    pending !== undefined && currentTick <= pending.expiresAtTick;
+    for (const slot of armorSlots) {
+      const item = equippable.getEquipment(slot);
+      if (!item) continue;
 
-  const vel = player.getVelocity();
-  const unmetConditions: string[] = [];
+      const enchantable = item.getComponent("minecraft:enchantable");
+      if (!enchantable) continue;
 
-  // 1. Y方向の速度が負であること（下降中）
-  // 着地後の保留期間中は地面接触でY速度が0になるため、保留中であればチェックを自動通過
-  if (!hasPendingDamage && vel.y >= 0) {
-    unmetConditions.push(
-      `Y方向の速度が負ではない (vel.y: ${vel.y.toFixed(3)} >= 0)`,
-    );
-  }
-
-  // 2. クールダウン判定
-  if (state && currentTick < state.canTriggerAfterTick) {
-    const remainingTicks = state.canTriggerAfterTick - currentTick;
-    unmetConditions.push(`再発動クールダウン中 (残り: ${remainingTicks} tick)`);
-  }
-
-  // 3. かかと位置（視線後方XZオフセット）から下方向にレイを飛ばす（水や草はすり抜ける）
-  const viewDir = player.getViewDirection();
-  const horizLen = Math.hypot(viewDir.x, viewDir.z);
-  const normX = horizLen > 0 ? viewDir.x / horizLen : 0;
-  const normZ = horizLen > 0 ? viewDir.z / horizLen : 0;
-
-  const downwardRayStart: Vector3 = {
-    x: player.location.x - normX * ROLL_HEEL_OFFSET_XZ,
-    y: player.location.y + 0.1, // 足元がブロック上面と一致している場合の境界抜けを防止
-    z: player.location.z - normZ * ROLL_HEEL_OFFSET_XZ,
-  };
-  const downwardRayDirection: Vector3 = { x: 0, y: -1, z: 0 };
-
-  const downwardHit = player.dimension.getBlockFromRay(
-    downwardRayStart,
-    downwardRayDirection,
-    ROLL_DOWNWARD_RAYCAST_OPTIONS,
-  );
-
-  if (!downwardHit) {
-    // デバッグ用計測: 長距離探索を行い、真下何メートル先ならブロックが存在するかを算出
-    const debugDownwardHit = player.dimension.getBlockFromRay(
-      downwardRayStart,
-      downwardRayDirection,
-      {
-        ...ROLL_DOWNWARD_RAYCAST_OPTIONS,
-        maxDistance: ROLL_DEBUG_RAY_MAX_DISTANCE,
-      },
-    );
-
-    if (debugDownwardHit) {
-      const worldHitY =
-        debugDownwardHit.block.location.y + debugDownwardHit.faceLocation.y;
-      const downwardDist = player.location.y - worldHitY;
-      const blockName = debugDownwardHit.block.typeId.replace("minecraft:", "");
-
-      unmetConditions.push(
-        `下方向レイが判定距離(${ROLL_DOWNWARD_RAY_MAX_DISTANCE.toFixed(2)}m)内にヒットしない ` +
-          `[Debug計測: 足元から真下 ${downwardDist.toFixed(2)}m でブロック検出 (${blockName})]`,
-      );
-    } else {
-      unmetConditions.push(
-        `下方向レイが判定距離(${ROLL_DOWNWARD_RAY_MAX_DISTANCE.toFixed(2)}m)内にヒットしない ` +
-          `[Debug計測: 探査限界(${ROLL_DEBUG_RAY_MAX_DISTANCE.toFixed(1)}m)内にもブロックなし]`,
-      );
+      for (const ench of enchantable.getEnchantments()) {
+        const id = ench.type.id.replace("minecraft:", "");
+        if (id === "feather_falling") {
+          totalEPF += ench.level * 3;
+        } else if (id === "protection") {
+          totalEPF += ench.level * 1;
+        }
+      }
     }
   }
 
-  // 4. 視線が水平より下を向いていること
-  if (viewDir.y > ROLL_VIEW_MAX_DIRECTION_Y) {
-    unmetConditions.push(
-      `視線が水平より下ではない (viewDir.y: ${viewDir.y.toFixed(3)} > ${ROLL_VIEW_MAX_DIRECTION_Y})`,
-    );
+  // Bedrock の EPF キャップ（最大80%軽減）を適用
+  const cappedEPF = Math.min(20, totalEPF);
+  const epfDamageMultiplier = 1.0 - cappedEPF * 0.04;
+
+  // 耐性エフェクト（Resistance）の考慮
+  let resistanceMultiplier = 1.0;
+  const resistanceEffect = player.getEffect("resistance");
+  if (resistanceEffect) {
+    const reduction = Math.min(1.0, (resistanceEffect.amplifier + 1) * 0.2);
+    resistanceMultiplier = 1.0 - reduction;
   }
 
-  // 5. 視線方向XZと移動速度XZのズレ（sin）が許容閾値（sin30°）以内であること
-  const speedXZ = Math.hypot(vel.x, vel.z);
-  if (speedXZ >= 0.001 && horizLen > 0) {
-    const normVelX = vel.x / speedXZ;
-    const normVelZ = vel.z / speedXZ;
-
-    // 2D外積の絶対値（sin値）と内積（前進成分: cos値）
-    const sinDiff = Math.abs(normX * normVelZ - normZ * normVelX);
-    const cosForward = normX * normVelX + normZ * normVelZ;
-
-    if (cosForward <= 0 || sinDiff > ROLL_MAX_DIRECTION_SIN_THRESHOLD) {
-      unmetConditions.push(
-        `移動方向と視線のズレが許容範囲外 (sin: ${sinDiff.toFixed(3)}, 許容: <= ${ROLL_MAX_DIRECTION_SIN_THRESHOLD.toFixed(3)}, cos: ${cosForward.toFixed(3)})`,
-      );
-    }
-  }
-
-  // 満たされない条件がある場合は一覧を送信して中断
-  if (unmetConditions.length > 0) {
-    player.sendMessage(
-      `§c[Roll 不発] 未達成条件 (${unmetConditions.length}件):\n` +
-        unmetConditions.map((cond) => ` §c- §f${cond}`).join("\n"),
-    );
-    return false;
-  }
-
-  // --- 発動成功処理 ---
-
-  // ケースA: 保留中の落下ダメージが存在する場合（パディング時間内の成功）
-  if (hasPendingDamage && pending) {
-    if (pending.timeoutId !== undefined) {
-      system.clearRun(pending.timeoutId);
-    }
-    pendingFallDamages.delete(player.id);
-
-    const delayTicks = currentTick - pending.hurtTick;
-    const reducedDamage = pending.damage - ROLL_FALL_DAMAGE_REDUCTION;
-
-    // クールダウン設定
-    rollStates.set(player.id, {
-      triggeredAtTick: currentTick,
-      activeUntilTick: -1,
-      canTriggerAfterTick: currentTick + ROLL_COOLDOWN_TICKS,
-    });
-
-    // 斜め下前へのロールインパルスを付与
-    applyRollImpulse(player);
-
-    if (reducedDamage <= 0) {
-      player.sendMessage(
-        `§a[Roll 軽減] パディング時間内にロール成功！ 落下ダメージ無効化 (Tick: ${currentTick}, 着地から: ${delayTicks} ticks, 元ダメージ: ${pending.damage.toFixed(1)} -> 0)`,
-      );
-    } else {
-      player.sendMessage(
-        `§a[Roll 軽減] パディング時間内にロール成功！ 落下ダメージ軽減 (Tick: ${currentTick}, 着地から: ${delayTicks} ticks, 元ダメージ: ${pending.damage.toFixed(1)} -> ${reducedDamage.toFixed(1)}, -${ROLL_FALL_DAMAGE_REDUCTION})`,
-      );
-
-      // 軽減後の残余ダメージを付与
-      isApplyingCustomFallDamage.add(player.id);
-      player.applyDamage(reducedDamage, {
-        cause: EntityDamageCause.fall,
-      });
-    }
-
-    return true;
-  }
-
-  // ケースB: 先行入力（通常の着地前発動可能状態への遷移）
-  rollStates.set(player.id, {
-    triggeredAtTick: currentTick,
-    activeUntilTick: currentTick + ROLL_WINDOW_TICKS,
-    canTriggerAfterTick: currentTick + ROLL_COOLDOWN_TICKS,
-  });
-
-  const downwardTargetName = downwardHit
-    ? downwardHit.block.typeId.replace("minecraft:", "")
-    : "block";
-
-  player.sendMessage(
-    `§a[Roll] 発動可能状態になりました！ (Tick: ${currentTick} / 有効: Tick ${currentTick + ROLL_WINDOW_TICKS} まで / CD: ${ROLL_COOLDOWN_TICKS} ticks, 足元: ${downwardTargetName})`,
-  );
-  return true;
+  return Math.max(0.0001, epfDamageMultiplier * resistanceMultiplier);
 }
+
+/**
+ * エンチャント適用後の最終ダメージから定数軽減量を差し引くために、
+ * 適用前の生ダメージ（Raw Damage）から差し引くべき補正量を計算します。
+ *
+ * @param player 対象プレイヤー
+ * @returns 生ダメージから差し引くべき軽減量
+ */
+export function calculateRawFallDamageReduction(player: Player): number {
+  const multiplier = calculateFallDamageMultiplier(player);
+  return ROLL_FALL_DAMAGE_REDUCTION / multiplier;
+}
+
+// ==========================================
+// アクション判定・実行
+// ==========================================
 
 /**
  * パルクールロールのロールインパルス（斜め下前）をプレイヤーに付与します。
@@ -304,6 +189,131 @@ export function applyRollImpulse(player: Player): void {
     if (!player.isValid) return;
     player.applyImpulse(impulse);
   });
+}
+
+/**
+ * パルクールロールの発動可否を判定し、条件を満たす場合にアクションを実行します。
+ * 軽量かつ不発頻度が高い判定から順に評価し、早期リターンします。
+ *
+ * 発動条件:
+ * 1. すでにロール有効時間内ではないこと
+ * 2. クールダウンが経過していること
+ * 3. プレイヤーのY方向速度が負であること (vel.y < 0) ※保留ダメージがある場合は免除
+ * 4. 視線が水平より下を向いていること (viewDir.y <= ROLL_VIEW_MAX_DIRECTION_Y)
+ * 5. 視線方向XZと移動速度XZのズレ（sin）が許容閾値以内であること
+ * 6. かかと位置から下方向のレイが固体ブロックにヒットすること
+ */
+export function tryTriggerPkRoll(player: Player): boolean {
+  const currentTick = system.currentTick;
+  const state = rollStates.get(player.id);
+
+  // 1. すでにロール発動可能時間（有効状態）中である場合はスキップ
+  if (state && currentTick <= state.activeUntilTick) {
+    return false;
+  }
+
+  // 2. クールダウン判定（数値比較のみで最軽量）
+  if (state && currentTick < state.canTriggerAfterTick) {
+    return false;
+  }
+
+  // 保留中の落下ダメージ情報を取得
+  const pending = pendingFallDamages.get(player.id);
+  const hasPendingDamage =
+    pending !== undefined && currentTick <= pending.expiresAtTick;
+
+  // 3. Y方向の速度判定（下降中であること。着地保留中は0になるため免除）
+  const vel = player.getVelocity();
+  if (!hasPendingDamage && vel.y >= 0) {
+    return false;
+  }
+
+  // 4. 視線方向のY成分判定（水平より下を向いていること）
+  const viewDir = player.getViewDirection();
+  if (viewDir.y > ROLL_VIEW_MAX_DIRECTION_Y) {
+    return false;
+  }
+
+  // 5. 視線方向XZと移動速度XZのズレ判定（水平移動がある場合のみ外積計算）
+  const speedXZ = Math.hypot(vel.x, vel.z);
+  const horizLen = Math.hypot(viewDir.x, viewDir.z);
+  if (speedXZ >= 0.001 && horizLen > 0) {
+    const normVx = viewDir.x / horizLen;
+    const normVz = viewDir.z / horizLen;
+    const normVelX = vel.x / speedXZ;
+    const normVelZ = vel.z / speedXZ;
+
+    const sinDiff = Math.abs(normVx * normVelZ - normVz * normVelX);
+    const cosForward = normVx * normVelX + normVz * normVelZ;
+
+    // 前進成分が負（後ろ向き）またはsinズレが閾値を超えている場合は除外
+    if (cosForward <= 0 || sinDiff > ROLL_MAX_DIRECTION_SIN_THRESHOLD) {
+      return false;
+    }
+  }
+
+  // 6. かかと位置から下方向へのレイキャスト（最も高コストなため全条件通過後に実行）
+  const normX = horizLen > 0 ? viewDir.x / horizLen : 0;
+  const normZ = horizLen > 0 ? viewDir.z / horizLen : 0;
+
+  const downwardRayStart: Vector3 = {
+    x: player.location.x - normX * ROLL_HEEL_OFFSET_XZ,
+    y: player.location.y + 0.1, // 足元がブロック上面と一致している場合の境界抜けを防止
+    z: player.location.z - normZ * ROLL_HEEL_OFFSET_XZ,
+  };
+  const downwardRayDirection: Vector3 = { x: 0, y: -1, z: 0 };
+
+  const downwardHit = player.dimension.getBlockFromRay(
+    downwardRayStart,
+    downwardRayDirection,
+    ROLL_DOWNWARD_RAYCAST_OPTIONS,
+  );
+
+  if (!downwardHit) {
+    return false;
+  }
+
+  // --- すべての条件を満たした場合の実行処理 ---
+
+  // ケースA: 保留中の落下ダメージが存在する場合（パディング時間内の成功）
+  if (hasPendingDamage && pending) {
+    if (pending.timeoutId !== undefined) {
+      system.clearRun(pending.timeoutId);
+    }
+    pendingFallDamages.delete(player.id);
+
+    const rawReduction = calculateRawFallDamageReduction(player);
+    const reducedDamage = pending.damage - rawReduction;
+
+    // クールダウン設定
+    rollStates.set(player.id, {
+      triggeredAtTick: currentTick,
+      activeUntilTick: -1,
+      canTriggerAfterTick: currentTick + ROLL_COOLDOWN_TICKS,
+    });
+
+    // 斜め下前へのロールインパルスを付与
+    applyRollImpulse(player);
+
+    // 軽減後の残余ダメージを付与
+    if (reducedDamage > 0) {
+      isApplyingCustomFallDamage.add(player.id);
+      player.applyDamage(reducedDamage, {
+        cause: EntityDamageCause.fall,
+      });
+    }
+
+    return true;
+  }
+
+  // ケースB: 先行入力（通常の着地前発動可能状態への遷移）
+  rollStates.set(player.id, {
+    triggeredAtTick: currentTick,
+    activeUntilTick: currentTick + ROLL_WINDOW_TICKS,
+    canTriggerAfterTick: currentTick + ROLL_COOLDOWN_TICKS,
+  });
+
+  return true;
 }
 
 // ==========================================
@@ -337,19 +347,13 @@ export function pkRollMain(): void {
 
     // 既にロール発動可能時間（有効状態）である場合: 即座に直接軽減
     if (state && currentTick <= state.activeUntilTick) {
-      const elapsedSinceTrigger = currentTick - state.triggeredAtTick;
-      const reducedDamage = originalDamage - ROLL_FALL_DAMAGE_REDUCTION;
+      const rawReduction = calculateRawFallDamageReduction(player);
+      const reducedDamage = originalDamage - rawReduction;
 
       if (reducedDamage <= 0) {
         event.cancel = true;
-        player.sendMessage(
-          `§a[Roll 軽減] 先行入力ロール成功！ 落下ダメージ無効化 (Tick: ${currentTick}, 発動から: ${elapsedSinceTrigger} ticks, 元ダメージ: ${originalDamage.toFixed(1)} -> 0)`,
-        );
       } else {
         event.damage = reducedDamage;
-        player.sendMessage(
-          `§a[Roll 軽減] 先行入力ロール成功！ 落下ダメージ軽減 (Tick: ${currentTick}, 発動から: ${elapsedSinceTrigger} ticks, 元ダメージ: ${originalDamage.toFixed(1)} -> ${reducedDamage.toFixed(1)}, -${ROLL_FALL_DAMAGE_REDUCTION})`,
-        );
       }
 
       // 斜め下前へのロールインパルスを付与
@@ -362,17 +366,6 @@ export function pkRollMain(): void {
 
     // パディングが無効（ゼロ以下）の場合: 即時判定のみ行い、未発動なら通常ダメージを通す
     if (ROLL_FALL_PADDING_TICKS <= 0) {
-      if (!state) {
-        player.sendMessage(
-          `§c[Roll 軽減不発] 落下ダメージ発生！ (Tick: ${currentTick}) ロール未発動です (ダメージ: ${originalDamage.toFixed(1)})`,
-        );
-      } else {
-        const elapsedSinceTrigger = currentTick - state.triggeredAtTick;
-        const expiredTicksAgo = currentTick - state.activeUntilTick;
-        player.sendMessage(
-          `§c[Roll 軽減不発] 落下ダメージ発生！ (Tick: ${currentTick}) 有効時間切れです (発動Tick: ${state.triggeredAtTick}, 経過: ${elapsedSinceTrigger} ticks, 期限から ${expiredTicksAgo} ticks 超過, ダメージ: ${originalDamage.toFixed(1)})`,
-        );
-      }
       return;
     }
 
@@ -387,10 +380,6 @@ export function pkRollMain(): void {
 
     const expiresAtTick = currentTick + ROLL_FALL_PADDING_TICKS;
 
-    player.sendMessage(
-      `§e[Roll 保留] 落下ダメージ発生！ (Tick: ${currentTick}) パディング待機中... (ダメージ: ${originalDamage.toFixed(1)}, 猶予: ${ROLL_FALL_PADDING_TICKS} ticks)`,
-    );
-
     // パディング期間満了時にロールが発動されなかった場合、元のダメージを付与するタイマー
     const timeoutId = system.runTimeout(() => {
       const pending = pendingFallDamages.get(player.id);
@@ -398,10 +387,6 @@ export function pkRollMain(): void {
       pendingFallDamages.delete(player.id);
 
       if (!player.isValid) return;
-
-      player.sendMessage(
-        `§c[Roll 不発] パディング時間内にロールが入力されませんでした (Tick: ${system.currentTick}, ダメージ: ${pending.damage.toFixed(1)})`,
-      );
 
       // プログラムから本来の落下ダメージを与える
       isApplyingCustomFallDamage.add(player.id);
