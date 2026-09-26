@@ -1,7 +1,10 @@
-import { slidingMain } from "./addons/sliding";
 import { airStrafeMain } from "./addons/air-strafe";
 import { climbingMain } from "./addons/climbing";
+import { pkRollMain } from "./addons/pk-roll";
+import { subscribeBlockHitDebugMessage } from "./utils/block-hit-debug.utils";
 
-slidingMain();
+// slidingMain();
 airStrafeMain();
 climbingMain();
+pkRollMain();
+subscribeBlockHitDebugMessage();
