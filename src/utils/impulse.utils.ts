@@ -248,3 +248,22 @@ export function calculateLiftImpulseAccurate(
     initialVelocityY: initialVy,
   };
 }
+
+/**
+ * nティックかけて指定した高さ(H)分上昇するのに必要な初速度(インパルス)を計算
+ *
+ * @param nTick 上昇にかけるTick数 (n >= 1)
+ * @param targetHeight 上昇したいブロック数 (デフォルト: 1.0)
+ */
+export function calculateImpulseForNTicks(
+  nTick: number,
+  targetHeight: number = 1.0,
+): number {
+  if (nTick <= 0) return 0;
+
+  // v0 = (0.02 * H + 0.08 * n) / (1 - 0.98^n) - 3.92
+  const numerator = 0.02 * targetHeight + 0.08 * nTick;
+  const denominator = 1.0 - Math.pow(0.98, nTick);
+
+  return numerator / denominator - 3.92;
+}
