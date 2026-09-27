@@ -8,23 +8,22 @@ import {
 } from "@minecraft/server";
 import { parkourEventHandler } from "../utils/parkour-event-handler.class";
 import { hasBlockCollisionFromFace } from "../utils/collision.utils";
+import { calculateLiftImpulseAccurate } from "../utils/impulse.utils";
 
 // ==========================================
 // 定数・パラメータ設定
 // ==========================================
 
 /**
- * ヴォルト発動時の上方向インパルス強度
- * Minecraftの垂直運動（重力0.08、空気抵抗0.98）において、
- * 初速 0.39 で最高到達高度が約 1.1 ブロックとなります。
+ * ヴォルト発動時の目標浮き上がり高さ（ブロック数）
  */
-export const VOLT_IMPULSE_Y = 0.6;
+export const VOLT_TARGET_HEIGHT = 1.05;
 
 /** ヴォルト発動時の前方（ブロック方向）インパルス強度 */
-export const VOLT_IMPULSE_FORWARD = 0.4;
+export const VOLT_IMPULSE_FORWARD = 0.2;
 
 /** 再度発動可能になるまでのクールダウン（tick） */
-export const VOLT_COOLDOWN_TICKS = 10;
+export const VOLT_COOLDOWN_TICKS = 1;
 
 // ==========================================
 // 状態管理
@@ -59,9 +58,15 @@ export function applyVoltImpulse(player: Player, hitBlock: Block): void {
   const forwardX = horizLen > 0 ? (dx / horizLen) * VOLT_IMPULSE_FORWARD : 0;
   const forwardZ = horizLen > 0 ? (dz / horizLen) * VOLT_IMPULSE_FORWARD : 0;
 
+  // 指定したブロック数分浮き上がるための垂直インパルスを計算
+  const liftImpulse = calculateLiftImpulseAccurate(
+    VOLT_TARGET_HEIGHT,
+    player.getVelocity(),
+  );
+
   const impulse: Vector3 = {
     x: forwardX,
-    y: VOLT_IMPULSE_Y,
+    y: liftImpulse.impulse.y,
     z: forwardZ,
   };
 

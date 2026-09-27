@@ -125,3 +125,126 @@ export function calculateVelocityImpulse({
 
   return { x: impulseX, y: impulseY, z: impulseZ };
 }
+
+/**
+ * 指定したブロック数分浮き上がるのに必要なインパルスベクトルを計算します。
+ * 近似式: v0 ≈ √(0.165 * H) + 0.05 * H^0.7
+ *
+ * @param targetHeight 浮き上がりたいブロック数 (H > 0)
+ * @param currentVelocity 現在のエンティティのベロシティ (player.getVelocity())
+ * @returns applyImpulse に渡すインパルスベクトル
+ */
+export function calculateLiftImpulse(
+  targetHeight: number,
+  currentVelocity: Vector3 = { x: 0, y: 0, z: 0 },
+): Vector3 {
+  if (targetHeight <= 0) {
+    return { x: 0, y: 0, z: 0 };
+  }
+
+  // 1. 目標高度に到達するために必要な垂直初速度 v0 を計算
+  const targetVy =
+    Math.sqrt(0.165 * targetHeight) + 0.05 * Math.pow(targetHeight, 0.7);
+
+  // 2. applyImpulse は現在の速度に加算されるため、差分を計算
+  // (落下中なら落下を相殺する分がプラスされ、上昇中なら小さくなります)
+  const impulseY = targetVy - currentVelocity.y;
+
+  // 水平方向は維持するため X, Z は 0
+  return {
+    x: 0,
+    y: impulseY,
+    z: 0,
+  };
+}
+
+export interface LiftImpulseResult {
+  /** applyImpulse に渡すインパルスベクトル */
+  impulse: Vector3;
+  /** 最高高度（目標高度）に達するまでの経過Tick数 (整数) */
+  ticksToApex: number;
+  /** 最高高度に達するまでの秒数 (ticks / 20) */
+  timeToApexSeconds: number;
+  /** 算出された垂直初速度 v0 (blocks/tick) */
+  initialVelocityY: number;
+}
+
+/**
+ * 目標高度に必要な初速度と、最高点に達するまでのTick数を同時にシミュレーションして逆算します。
+ */
+function solveLiftPhysics(targetHeight: number): {
+  initialVy: number;
+  ticks: number;
+} {
+  if (targetHeight <= 0) return { initialVy: 0, ticks: 0 };
+
+  let low = 0;
+  let high = targetHeight * 0.8 + 2.0;
+
+  // 1. 初速度 v0 を二分探索で特定
+  for (let i = 0; i < 25; i++) {
+    const mid = (low + high) / 2;
+    let v = mid;
+    let h = 0;
+
+    while (true) {
+      v -= 0.08;
+      if (v <= 0) break;
+      h += v;
+      v *= 0.98;
+    }
+
+    if (h < targetHeight) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  const initialVy = (low + high) / 2;
+
+  // 2. 確定した初速度で実機パイプラインを1回走らせ、最高点までのTick数をカウント
+  let v = initialVy;
+  let ticks = 0;
+  while (true) {
+    v -= 0.08;
+    if (v <= 0) break; // 上昇が止まり落下に転じた瞬間
+    ticks++;
+    v *= 0.98;
+  }
+
+  return { initialVy, ticks };
+}
+
+/**
+ * 指定したブロック数分浮き上がるのに必要なインパルスと、最高点到達までの時間を計算します。
+ *
+ * @param targetHeight 浮き上がりたいブロック数 (H > 0)
+ * @param currentVelocity 現在のエンティティのベロシティ (player.getVelocity())
+ */
+export function calculateLiftImpulseAccurate(
+  targetHeight: number,
+  currentVelocity: Vector3 = { x: 0, y: 0, z: 0 },
+): LiftImpulseResult {
+  if (targetHeight <= 0) {
+    return {
+      impulse: { x: 0, y: 0, z: 0 },
+      ticksToApex: 0,
+      timeToApexSeconds: 0,
+      initialVelocityY: 0,
+    };
+  }
+
+  // 1. 初速度とTick数を計算
+  const { initialVy, ticks } = solveLiftPhysics(targetHeight);
+
+  // 2. 現在の速度との差分をインパルスとする
+  const impulseY = initialVy - currentVelocity.y;
+
+  return {
+    impulse: { x: 0, y: impulseY, z: 0 },
+    ticksToApex: ticks,
+    timeToApexSeconds: ticks / 20.0,
+    initialVelocityY: initialVy,
+  };
+}
