@@ -45,14 +45,29 @@ export const AUTO_JUMP_RAY_Y_OFFSET = 0.61;
 export const AUTO_JUMP_MAX_RAY_DISTANCE = 4.0;
 
 /**
+ * 登った先（1ブロック上）の次の段差を探索する最大距離（ブロック数）
+ */
+export const AUTO_JUMP_UPPER_RAY_MAX_DISTANCE = 6.0;
+
+/**
+ * 次の段差が近接していると判定する距離閾値（ブロック数）
+ */
+export const AUTO_JUMP_BRAKE_NEXT_STEP_DISTANCE = 2.1;
+
+/**
+ * 次の段差が近接している場合に最高高度到達次tickで減速するインパルス比率
+ */
+export const AUTO_JUMP_BRAKE_RATIO = 0.33;
+
+/**
  * オートジャンプ判定を行う最小水平速度（ブロック/tick）
  */
 export const AUTO_JUMP_MIN_SPEED = 0.02;
 
 /**
- * オートジャンプ発動後の再発動クールダウン（tick）
+ * オートジャンプ発動後の再発動クールダウン（tick）(デフォルトなし)
  */
-export const AUTO_JUMP_COOLDOWN_TICKS = 8;
+export const AUTO_JUMP_COOLDOWN_TICKS = 0;
 
 /**
  * ブロック接着（密着）検知用レイキャストの照射距離（ブロック数）
@@ -84,6 +99,32 @@ export const AUTO_JUMP_DIRECTION_MODE: AutoJumpDirectionMode = "forward_only";
 export const AUTO_JUMP_FORWARD_SIN_THRESHOLD = Math.sin((60 * Math.PI) / 180);
 
 /**
+ * オートジャンプを発動させる状態（ステート）の設定インターフェース
+ */
+export interface AutoJumpTriggerStates {
+  /** 密着状態（ブロックに接着・停止している状態）で発動するか */
+  flush: boolean;
+  /** 歩き状態（非ダッシュでの通常歩行移動中）で発動するか */
+  walk: boolean;
+  /** ダッシュ状態（ダッシュ／スプリント移動中）で発動するか */
+  sprint: boolean;
+}
+
+/**
+ * オートジャンプの発動状態設定
+ * 密着状態, 歩き状態, ダッシュ状態 それぞれでオートジャンプが発動するかを選択できます。
+ * デフォルトではダッシュのときだけ発動します。
+ */
+export const AUTO_JUMP_TRIGGER_STATES: AutoJumpTriggerStates = {
+  /** 密着状態 */
+  flush: false,
+  /** 歩き状態 */
+  walk: false,
+  /** ダッシュ状態 */
+  sprint: true,
+};
+
+/**
  * デバッグ設定
  */
 export const AUTO_JUMP_DEBUG = {
@@ -104,6 +145,14 @@ export const AUTO_JUMP_DEBUG = {
  */
 export const PRECALCULATED_LIFT: LiftImpulseResult =
   calculateLiftImpulseAccurate(AUTO_JUMP_TARGET_HEIGHT);
+
+/**
+ * ジャンプ発動からブレーキインパルスを付与するまでの遅延Tick数
+ * デフォルト: PRECALCULATED_LIFT.ticksToApex + 1（最高高度到達の次tick）
+ * 任意の整数Tick（例: 5, 6 など）を直接指定することも可能です。
+ */
+export const AUTO_JUMP_BRAKE_DELAY_TICKS: number =
+  PRECALCULATED_LIFT.ticksToApex + 1;
 
 // ==========================================
 // 状態管理
@@ -130,6 +179,15 @@ export interface CornerRayDebug {
   distance: number;
 }
 
+export interface NextStepInfo {
+  /** プレイヤー位置からの直線幾何距離（ブロック数） */
+  distanceFromPlayer: number;
+  /** 登った段差（1段目のブロック）からの距離（ブロック数） */
+  distanceFromLedge: number;
+  /** 次の段差ブロック */
+  block?: Block;
+}
+
 export interface RaycastDistanceResult {
   /** 最短衝突距離（衝突なしの場合は Infinity） */
   minDistance: number;
@@ -137,6 +195,8 @@ export interface RaycastDistanceResult {
   hitBlock?: Block;
   /** 各コーナーのレイキャスト結果詳細 */
   rayResults: CornerRayDebug[];
+  /** 登った先（1ブロック上）の次の段差情報 */
+  nextStep?: NextStepInfo;
 }
 
 /**
@@ -286,7 +346,51 @@ export function getDistanceToNextBlock(
     }
   }
 
-  return { minDistance, hitBlock, rayResults };
+  // 登った先（1ブロック上）の次の段差レイキャスト
+  const upperRayY = rayY + 1.0;
+  const upperOptions: BlockRaycastOptions = {
+    maxDistance: AUTO_JUMP_UPPER_RAY_MAX_DISTANCE,
+    includePassableBlocks: false,
+    includeLiquidBlocks: false,
+  };
+
+  let nextStepDistance = Infinity;
+  let nextStepBlock: Block | undefined = undefined;
+
+  for (const { pos } of cornerDefs) {
+    const startPos: Vector3 = {
+      x: pos.x - dir.x * BACK_OFFSET,
+      y: upperRayY,
+      z: pos.z - dir.z * BACK_OFFSET,
+    };
+
+    const hit = player.dimension.getBlockFromRay(startPos, dir, upperOptions);
+    if (hit && !isIgnoredBlock(hit.block)) {
+      const upperPos: Vector3 = { x: pos.x, y: upperRayY, z: pos.z };
+      const dist = calculateDistanceToHitFace(
+        upperPos,
+        dir,
+        hit.block.location,
+        hit.face,
+      );
+
+      if (dist < nextStepDistance) {
+        nextStepDistance = dist;
+        nextStepBlock = hit.block;
+      }
+    }
+  }
+
+  let nextStep: NextStepInfo | undefined = undefined;
+  if (isFinite(nextStepDistance) && nextStepBlock) {
+    nextStep = {
+      distanceFromPlayer: nextStepDistance,
+      distanceFromLedge: Math.max(0, nextStepDistance - minDistance),
+      block: nextStepBlock,
+    };
+  }
+
+  return { minDistance, hitBlock, rayResults, nextStep };
 }
 
 export interface ForwardInputResult {
@@ -410,11 +514,27 @@ function executeAutoJump(
   speed: number,
   triggerReason: string,
   extraDetails?: string,
+  nextStep?: NextStepInfo,
 ): void {
   // クールダウンおよび離陸・着地監視ステートを設定
   state.canJumpAfterTick = currentTick + AUTO_JUMP_COOLDOWN_TICKS;
   state.isJumping = true;
   state.hasLeftGround = false;
+
+  // 水平移動方向の単位ベクトルを算出
+  let dirX = 0;
+  let dirZ = 0;
+  if (speed > 0.001) {
+    dirX = vel.x / speed;
+    dirZ = vel.z / speed;
+  } else {
+    const viewDir = player.getViewDirection();
+    const viewLen = Math.hypot(viewDir.x, viewDir.z);
+    if (viewLen > 0) {
+      dirX = viewDir.x / viewLen;
+      dirZ = viewDir.z / viewLen;
+    }
+  }
 
   // 1. Y方向インパルスを実行（浮き上がり高さ 1.05ブロック）
   const targetImpulseY = PRECALCULATED_LIFT.initialVelocityY - vel.y;
@@ -431,40 +551,82 @@ function executeAutoJump(
 
   // 2. ダッシュ中はジャンプ後にxz方向に0.2のボーナス加速を与える
   const isSprinting = player.isSprinting;
-  if (isSprinting) {
-    let boostX = 0;
-    let boostZ = 0;
-    if (speed > 0.001) {
-      boostX = vel.x / speed;
-      boostZ = vel.z / speed;
-    } else {
-      const viewDir = player.getViewDirection();
-      const viewLen = Math.hypot(viewDir.x, viewDir.z);
-      if (viewLen > 0) {
-        boostX = viewDir.x / viewLen;
-        boostZ = viewDir.z / viewLen;
-      }
-    }
-
+  if (isSprinting && (dirX !== 0 || dirZ !== 0)) {
     player.applyImpulse({
-      x: boostX * AUTO_JUMP_SPRINT_BONUS,
+      x: dirX * AUTO_JUMP_SPRINT_BONUS,
       y: 0,
-      z: boostZ * AUTO_JUMP_SPRINT_BONUS,
+      z: dirZ * AUTO_JUMP_SPRINT_BONUS,
     });
+  }
+
+  // 3. 次の段差が近接（<= 2.1m）している場合、最高高度到達の次tickに逆方向XZインパルス（直前速度の30%）を付与
+  const shouldBrake = Boolean(
+    nextStep &&
+    nextStep.block &&
+    isFinite(nextStep.distanceFromLedge) &&
+    nextStep.distanceFromLedge <= AUTO_JUMP_BRAKE_NEXT_STEP_DISTANCE,
+  );
+
+  if (shouldBrake) {
+    const brakeTicks = AUTO_JUMP_BRAKE_DELAY_TICKS;
+    system.runTimeout(() => {
+      if (!player.isValid) return;
+
+      // ブレーキ直前の現在の水平移動速度を取得
+      const curVel = player.getVelocity();
+      const curSpeed = Math.hypot(curVel.x, curVel.z);
+
+      // 水平速度が存在する場合、その比率分を逆向きインパルスとして付与
+      if (curSpeed > 0.001) {
+        const impulseX = -curVel.x * AUTO_JUMP_BRAKE_RATIO;
+        const impulseZ = -curVel.z * AUTO_JUMP_BRAKE_RATIO;
+        const impulseMag = Math.hypot(impulseX, impulseZ);
+
+        player.applyImpulse({
+          x: impulseX,
+          y: 0,
+          z: impulseZ,
+        });
+
+        if (AUTO_JUMP_DEBUG.enabled && AUTO_JUMP_DEBUG.chatOnJump) {
+          const afterSpeed = curSpeed * (1 - AUTO_JUMP_BRAKE_RATIO);
+          player.sendMessage(
+            `§c[AutoJump ブレーキ発動]§r §7+${brakeTicks}tick 減速: §e-${(AUTO_JUMP_BRAKE_RATIO * 100).toFixed(0)}%§r §7(インパルス: §e-${impulseMag.toFixed(3)}§r, 速度: §b${curSpeed.toFixed(3)}§7→§a${afterSpeed.toFixed(3)}§7, 次段差: §b${nextStep?.distanceFromLedge?.toFixed(2)}m§7)§r`,
+          );
+        }
+      }
+    }, brakeTicks);
   }
 
   // デバッグメッセージ送信
   if (AUTO_JUMP_DEBUG.enabled) {
     if (AUTO_JUMP_DEBUG.chatOnJump) {
+      let nextStepStr = "  §7次の段差: §fなし(平坦)§r";
+      if (nextStep && nextStep.block && isFinite(nextStep.distanceFromLedge)) {
+        const bName = nextStep.block.typeId.replace("minecraft:", "");
+        const brakeNotice = shouldBrake
+          ? ` §c[ブレーキ予定: +${AUTO_JUMP_BRAKE_DELAY_TICKS}tick (-${(AUTO_JUMP_BRAKE_RATIO * 100).toFixed(0)}%)]§r`
+          : "";
+        nextStepStr = `  §7次の段差: §e${nextStep.distanceFromLedge.toFixed(2)}ブロック先§r §7(自位置から§b${nextStep.distanceFromPlayer.toFixed(2)}m§7, §f${bName}§7)§r${brakeNotice}`;
+      }
+
       player.sendMessage(
         `§a[AutoJump 発動: ${triggerReason}]§r §7Block: §e${hitBlock.typeId.replace("minecraft:", "")}§r\n` +
-          `  §7速度: §b${speed.toFixed(3)}§r §7| ダッシュ加速: ${isSprinting ? `§a+${AUTO_JUMP_SPRINT_BONUS}§r` : "§7なし§r"}${extraDetails ? `\n  ${extraDetails}` : ""}`,
+          `  §7速度: §b${speed.toFixed(3)}§r §7| ダッシュ加速: ${isSprinting ? `§a+${AUTO_JUMP_SPRINT_BONUS}§r` : "§7なし§r"}${extraDetails ? `\n  ${extraDetails}` : ""}\n` +
+          nextStepStr,
       );
     }
 
     if (AUTO_JUMP_DEBUG.actionBarTracking) {
+      const brakeNoticeShort = shouldBrake
+        ? ` §c[Brake +${AUTO_JUMP_BRAKE_DELAY_TICKS}t]§r`
+        : "";
+      const nextShort =
+        nextStep && isFinite(nextStep.distanceFromLedge)
+          ? ` §7| 次:§e${nextStep.distanceFromLedge.toFixed(1)}m§r${brakeNoticeShort}`
+          : "";
       player.onScreenDisplay.setActionBar(
-        `§a[AutoJump] JUMP! (${triggerReason})`,
+        `§a[AutoJump] JUMP! (${triggerReason})${nextShort}`,
       );
     }
   }
@@ -483,43 +645,20 @@ export function tryFlushAutoJump(
   speed: number,
   forwardInputResult?: ForwardInputResult,
 ): boolean {
+  // 密着状態での発動が無効化されている場合はスキップ
+  if (!AUTO_JUMP_TRIGGER_STATES.flush) {
+    return false;
+  }
+
   const inputCheck = forwardInputResult ?? checkForwardMovementInput(player);
 
-  // 視線水平ベクトル
-  const viewDir = player.getViewDirection();
-  const viewLen = Math.hypot(viewDir.x, viewDir.z);
-  const normVx = viewLen > 0 ? viewDir.x / viewLen : 0;
-  const normVz = viewLen > 0 ? viewDir.z / viewLen : 0;
-
   // 視線方向に最も近いAABB面（東西南北）の方角を算出
+  const viewDir = player.getViewDirection();
   const faceDir = getClosestAABBFaceDirection(viewDir);
 
-  // 入力が正面であるかの検証:
-  // 1. inputInfoでisForward判定が取れている場合はOK
-  // 2. inputInfoで入力ベクトルが存在し、軸比率で正面寄り（sin <= 60°）ならOK
-  // 3. inputInfoが取得できない環境（stationary_fallback等）や壁衝突で入力が0になる場合:
-  //    視線が壁面方向（faceDir）を向いている（dot(viewDir, faceDir) >= cos(60°) = 0.5）かつスニークしていなければ正面入力とみなす
-  let isForwardIntent = inputCheck.isForward;
-
-  if (!isForwardIntent && inputCheck.inputVector) {
-    const { x: inX, y: inY } = inputCheck.inputVector;
-    const len = Math.hypot(inX, inY);
-    if (len >= 0.05 && Math.abs(inX) / len <= AUTO_JUMP_FORWARD_SIN_THRESHOLD) {
-      isForwardIntent = true;
-    }
-  }
-
-  if (
-    !isForwardIntent &&
-    (inputCheck.source === "stationary_fallback" || !inputCheck.inputVector)
-  ) {
-    const dotViewFace = normVx * faceDir.x + normVz * faceDir.z;
-    if (dotViewFace >= 0.5) {
-      isForwardIntent = true;
-    }
-  }
-
-  if (!isForwardIntent && AUTO_JUMP_DIRECTION_MODE === "forward_only") {
+  // 前方移動モード時は、プレイヤーの正面入力（キー/スティック前倒し）を必須とする
+  // 入力がない場合（静止放置）や後退・横移動時は絶対に発動させない
+  if (AUTO_JUMP_DIRECTION_MODE === "forward_only" && !inputCheck.isForward) {
     return false;
   }
 
@@ -531,15 +670,28 @@ export function tryFlushAutoJump(
     z: loc.z,
   };
 
-  // 長さ0.35m（AABB半幅0.3m + 密着マージン0.05m）のレイキャスト
+  // 浮動小数点誤差やすり抜けを防ぐため探索距離は余裕を持って1.2mとし、面までの幾何距離で密着判定を行う（step-upの実装知見）
   const options: BlockRaycastOptions = {
-    maxDistance: 0.35,
+    maxDistance: 1.2,
     includePassableBlocks: false,
     includeLiquidBlocks: false,
   };
 
   const hit = player.dimension.getBlockFromRay(rayStart, faceDir, options);
   if (!hit) {
+    return false;
+  }
+
+  // 衝突面までの厳密な幾何距離を算出
+  const dist = calculateDistanceToHitFace(
+    rayStart,
+    faceDir,
+    hit.block.location,
+    hit.face,
+  );
+
+  // 距離判定: AABB半幅0.3m + 密着マージン0.1m = 0.40m（+バッファ0.01m = 0.41m以内）
+  if (dist > 0.41) {
     return false;
   }
 
@@ -558,6 +710,39 @@ export function tryFlushAutoJump(
     return false;
   }
 
+  // 登った先（1ブロック上）の次の段差レイキャスト（探索距離: AUTO_JUMP_UPPER_RAY_MAX_DISTANCE = 6.0m）
+  const upperRayStart: Vector3 = {
+    x: loc.x,
+    y: rayStart.y + 1.0,
+    z: loc.z,
+  };
+
+  const upperOptions: BlockRaycastOptions = {
+    maxDistance: AUTO_JUMP_UPPER_RAY_MAX_DISTANCE,
+    includePassableBlocks: false,
+    includeLiquidBlocks: false,
+  };
+
+  let nextStep: NextStepInfo | undefined = undefined;
+  const upperHit = player.dimension.getBlockFromRay(
+    upperRayStart,
+    faceDir,
+    upperOptions,
+  );
+  if (upperHit && !isIgnoredBlock(upperHit.block)) {
+    const uDist = calculateDistanceToHitFace(
+      upperRayStart,
+      faceDir,
+      upperHit.block.location,
+      upperHit.face,
+    );
+    nextStep = {
+      distanceFromPlayer: uDist,
+      distanceFromLedge: Math.max(0, uDist - dist),
+      block: upperHit.block,
+    };
+  }
+
   // 条件成立！ジャンプを実行
   executeAutoJump(
     player,
@@ -567,7 +752,8 @@ export function tryFlushAutoJump(
     vel,
     speed,
     "密着接着",
-    `§7面方向: §b${Direction[hit.face]} §7| ブロック: §e${hit.block.typeId.replace("minecraft:", "")}§r`,
+    `§7距離: §a${dist.toFixed(2)}m§r (許容: 0.41m) §7| 面: §b${Direction[hit.face]} §7| ブロック: §e${hit.block.typeId.replace("minecraft:", "")}§r`,
+    nextStep,
   );
 
   return true;
@@ -618,10 +804,10 @@ export function tryAutoJump(player: Player): boolean {
     return false;
   }
 
-  // 3. 垂直速度安全ガード: 地上静止・歩行中は vel.y == 0
-  // vel.y > 0（すでに上昇中・ジャンプ中）なら多重発動防止のため絶対にスキップ
+  // 3. 垂直速度安全ガード: 地上静止・歩行中は vel.y ≈ 0
+  // vel.y > 0.05（明確に上昇中・ジャンプ中）なら多重発動防止のためスキップ（微小な浮動小数点ノイズによる誤遮断を防止）
   const vel = player.getVelocity();
-  if (vel.y > 0) {
+  if (vel.y > 0.05) {
     return false;
   }
 
@@ -630,73 +816,82 @@ export function tryAutoJump(player: Player): boolean {
 
   // 4. 移動速度が最小値以上あれば、通常の先行予測オートジャンプ（4隅レイキャスト + 到達tick判定）を試行
   if (speed >= AUTO_JUMP_MIN_SPEED) {
-    // 移動中かつ前方移動モードの場合は、進行方向への前進入力を要求
-    if (
-      AUTO_JUMP_DIRECTION_MODE === "forward_only" &&
-      !forwardInputResult.isForward
-    ) {
-      return false;
-    }
+    const isSprinting = player.isSprinting;
+    const isStateAllowed = isSprinting
+      ? AUTO_JUMP_TRIGGER_STATES.sprint
+      : AUTO_JUMP_TRIGGER_STATES.walk;
 
-    const { minDistance, hitBlock, rayResults } = getDistanceToNextBlock(
-      player,
-      vel,
-      speed,
-    );
-    if (isFinite(minDistance) && hitBlock) {
-      // 壁など登れないブロック（上に空きがない場合）はスキップ
-      if (!hasClearanceAbove(hitBlock)) {
-        if (AUTO_JUMP_DEBUG.enabled && AUTO_JUMP_DEBUG.actionBarTracking) {
-          player.onScreenDisplay.setActionBar(
-            `§c[AutoJump] 登坂不可(頭上塞がり): §f${hitBlock.typeId.replace("minecraft:", "")} §7距離: §e${minDistance.toFixed(2)}m`,
-          );
-        }
+    if (isStateAllowed) {
+      // 移動中かつ前方移動モードの場合は、進行方向への前進入力を要求
+      if (
+        AUTO_JUMP_DIRECTION_MODE === "forward_only" &&
+        !forwardInputResult.isForward
+      ) {
         return false;
       }
 
-      // プレイヤーのベロシティからそのブロックまで到達するtickを計算
-      const ticksToReach = minDistance / speed;
+      const { minDistance, hitBlock, rayResults, nextStep } =
+        getDistanceToNextBlock(player, vel, speed);
+      if (isFinite(minDistance) && hitBlock) {
+        // 壁など登れないブロック（上に空きがない場合）はスキップ
+        if (!hasClearanceAbove(hitBlock)) {
+          if (AUTO_JUMP_DEBUG.enabled && AUTO_JUMP_DEBUG.actionBarTracking) {
+            player.onScreenDisplay.setActionBar(
+              `§c[AutoJump] 登坂不可(頭上塞がり): §f${hitBlock.typeId.replace("minecraft:", "")} §7距離: §e${minDistance.toFixed(2)}m`,
+            );
+          }
+          return false;
+        }
 
-      // 到達tickが閾値より短いなら先行予測ジャンプを実行
-      if (ticksToReach < PRECALCULATED_LIFT.ticksToApex) {
-        const hitsSummary = rayResults
-          .filter((r) => r.hit)
-          .map((r) => `${r.name}:${r.distance.toFixed(2)}m`)
-          .join(" ");
+        // プレイヤーのベロシティからそのブロックまで到達するtickを計算
+        const ticksToReach = minDistance / speed;
 
-        const forwardDetail = `§7距離: §f${minDistance.toFixed(2)}m§r §7| 到達: §c${ticksToReach.toFixed(1)}t§r < §a${PRECALCULATED_LIFT.ticksToApex}t§r §7| 命中レイ: §d[${hitsSummary}]§r`;
+        // 到達tickが閾値より短いなら先行予測ジャンプを実行
+        if (ticksToReach < PRECALCULATED_LIFT.ticksToApex) {
+          const hitsSummary = rayResults
+            .filter((r) => r.hit)
+            .map((r) => `${r.name}:${r.distance.toFixed(2)}m`)
+            .join(" ");
 
-        executeAutoJump(
-          player,
-          currentTick,
-          state,
-          hitBlock,
-          vel,
-          speed,
-          "先行予測",
-          forwardDetail,
-        );
-        return true;
-      }
+          const forwardDetail = `§7距離: §f${minDistance.toFixed(2)}m§r §7| 到達: §c${ticksToReach.toFixed(1)}t§r < §a${PRECALCULATED_LIFT.ticksToApex}t§r §7| 命中レイ: §d[${hitsSummary}]§r`;
 
-      // まだ到達タイミングではない（十分遠い）場合
-      if (AUTO_JUMP_DEBUG.enabled && AUTO_JUMP_DEBUG.actionBarTracking) {
-        player.onScreenDisplay.setActionBar(
-          `§e[AutoJump] 検知中: §f${hitBlock.typeId.replace("minecraft:", "")} §7距離: §e${minDistance.toFixed(2)}m §7| 到達: §b${ticksToReach.toFixed(1)}t §7>= 閾値: §a${PRECALCULATED_LIFT.ticksToApex}t`,
-        );
+          executeAutoJump(
+            player,
+            currentTick,
+            state,
+            hitBlock,
+            vel,
+            speed,
+            isSprinting ? "先行予測(ダッシュ)" : "先行予測(歩き)",
+            forwardDetail,
+            nextStep,
+          );
+          return true;
+        }
+
+        // まだ到達タイミングではない（十分遠い）場合
+        if (AUTO_JUMP_DEBUG.enabled && AUTO_JUMP_DEBUG.actionBarTracking) {
+          player.onScreenDisplay.setActionBar(
+            `§e[AutoJump] 検知中: §f${hitBlock.typeId.replace("minecraft:", "")} §7距離: §e${minDistance.toFixed(2)}m §7| 到達: §b${ticksToReach.toFixed(1)}t §7>= 閾値: §a${PRECALCULATED_LIFT.ticksToApex}t`,
+          );
+        }
       }
     }
   }
 
   // 5. 完全にブロックに接着（密着）して停止している場合の判定
-  return tryFlushAutoJump(
-    player,
-    currentTick,
-    state,
-    vel,
-    speed,
-    forwardInputResult,
-  );
+  if (AUTO_JUMP_TRIGGER_STATES.flush) {
+    return tryFlushAutoJump(
+      player,
+      currentTick,
+      state,
+      vel,
+      speed,
+      forwardInputResult,
+    );
+  }
+
+  return false;
 }
 
 // ==========================================

@@ -3,6 +3,7 @@ import {
   Direction,
   type Vector3,
   type BlockRaycastOptions,
+  Dimension,
 } from "@minecraft/server";
 
 // ==========================================
@@ -482,4 +483,83 @@ export function hasBlockCollisionFromAirFaces(
 
   // 空気の面があったにもかかわらず1つも当たらなかった場合（松明・草花など）
   return false;
+}
+
+/**
+ * レイの始点(pos)と方向ベクトル(direction)から、ヒットしたブロックの衝突面(hit.face)の平面までの直線距離(blocks)を計算します。
+ * MCPE-223452等による hit.faceLocation の座標ずれ・1m過剰見積もりを回避し、幾何学的に厳密な距離を算出します。
+ *
+ * @param dimension 対象ディメンション
+ * @param pos レイの始点座標
+ * @param direction 移動方向ベクトル (水平成分を使用)
+ * @param options レイキャストのオプション
+ * @returns 衝突面までの直線距離(blocks)（衝突なし、または到達不可能な場合は null）
+ */
+export function calculateDistanceToHitFace(
+  dimension: Dimension,
+  pos: Vector3,
+  direction: Vector3,
+  options?: BlockRaycastOptions,
+): number | null {
+  const len = Math.hypot(direction.x, direction.z);
+  if (len < 1e-5) return null;
+
+  // 水平方向の単位ベクトル（正規化）
+  const dirX = direction.x / len;
+  const dirZ = direction.z / len;
+
+  // 正規化したベクトルを渡すことで、options.maxDistance なども正確に機能する
+  const hit = dimension.getBlockFromRay(
+    pos,
+    { x: dirX, y: 0, z: dirZ },
+    options,
+  );
+
+  if (!hit) return null;
+
+  let distance = 0;
+
+  switch (hit.face) {
+    case Direction.North:
+      // 北面: Z = hit.block.location.z
+      distance =
+        Math.abs(dirZ) > 1e-5 ? (hit.block.location.z - pos.z) / dirZ : 0;
+      break;
+
+    case Direction.South:
+      // 南面: Z = hit.block.location.z + 1.0
+      distance =
+        Math.abs(dirZ) > 1e-5 ? (hit.block.location.z + 1.0 - pos.z) / dirZ : 0;
+      break;
+
+    case Direction.West:
+      // 西面: X = hit.block.location.x
+      distance =
+        Math.abs(dirX) > 1e-5 ? (hit.block.location.x - pos.x) / dirX : 0;
+      break;
+
+    case Direction.East:
+      // 東面: X = hit.block.location.x + 1.0
+      distance =
+        Math.abs(dirX) > 1e-5 ? (hit.block.location.x + 1.0 - pos.x) / dirX : 0;
+      break;
+
+    default: {
+      // 上面や下面などの例外時はブロックAABBとの最短水平直線距離
+      const dx = Math.max(
+        hit.block.location.x - pos.x,
+        0,
+        pos.x - (hit.block.location.x + 1.0),
+      );
+      const dz = Math.max(
+        hit.block.location.z - pos.z,
+        0,
+        pos.z - (hit.block.location.z + 1.0),
+      );
+      distance = Math.hypot(dx, dz);
+      break;
+    }
+  }
+
+  return Math.max(0, distance);
 }

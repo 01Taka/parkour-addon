@@ -96,3 +96,27 @@ export function calculatePlayerToBlockDistance(
 
   return calculatePointToAABBDistance(player.location, aabb);
 }
+
+/**
+ * プレイヤーのワールド座標系 AABB（境界ボックス）を取得します。
+ * スニーク、泳ぎ、エリトラ滑空、睡眠などの姿勢変化に対応しています。
+ *
+ * @param player 対象のプレイヤー
+ * @returns 最小座標 (min) と 最大座標 (max)
+ */
+export function getPlayerAABB(player: Player): AABB {
+  const rawAABB = player.getAABB();
+  const { center, extent } = rawAABB;
+  return {
+    min: {
+      x: center.x - extent.x,
+      y: center.y - extent.y,
+      z: center.z - extent.z,
+    },
+    max: {
+      x: center.x + extent.x,
+      y: center.y + extent.y,
+      z: center.z + extent.z,
+    },
+  };
+}
