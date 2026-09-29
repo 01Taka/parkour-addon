@@ -6,7 +6,7 @@ import {
   type AutoJumpAngle,
   type AutoJumpHeight,
   type AutoJumpMovement,
-} from "./simple-auto-jump"; // ※パスは実際の環境に合わせてください
+} from "./auto-jump"; // ※パスは実際の環境に合わせてください
 
 /**
  * 選択肢の一覧

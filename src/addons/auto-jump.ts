@@ -182,7 +182,7 @@ function matchesAngleCondition(
   return Math.abs(angle) < threshold;
 }
 
-export function simpleAutoJumpMain() {
+export function autoJumpMain() {
   system.runInterval(() => {
     for (const player of world.getAllPlayers()) {
       const canAutoJump = PlayerStateManager.get(
