@@ -7,7 +7,7 @@ import {
   type BlockRaycastOptions,
   type Vector3,
 } from "@minecraft/server";
-import { parkourEventHandler } from "../utils/parkour-event-handler.class";
+import { parkourEventHandler } from "../classes/parkour-event-handler.class";
 
 // ==========================================
 // 定数・パラメータ設定

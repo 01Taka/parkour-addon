@@ -1,9 +1,4 @@
-import {
-  Block,
-  Player,
-  type Vector3,
-  world,
-} from "@minecraft/server";
+import { Block, Player, type Vector3, world } from "@minecraft/server";
 import {
   calculatePlayerToBlockDistance,
   type AABBDistanceResult,
@@ -11,7 +6,7 @@ import {
 import {
   parkourEventHandler,
   type ParkourHitBlockEvent,
-} from "./parkour-event-handler.class";
+} from "../classes/parkour-event-handler.class";
 
 /**
  * ブロック殴打時のデバッグ情報
@@ -137,8 +132,7 @@ export function sendBlockHitDebugMessage(
 /**
  * イベント監視オプション
  */
-export interface SubscribeBlockHitDebugOptions
-  extends BlockHitDebugMessageOptions {
+export interface SubscribeBlockHitDebugOptions extends BlockHitDebugMessageOptions {
   /**
    * 監視するイベントの種類
    * - "native": `@minecraft/server` の `entityHitBlock`（すべてのアイテム・殴打で発火）

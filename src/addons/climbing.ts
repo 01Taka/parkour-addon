@@ -6,7 +6,7 @@ import {
   type Player,
   type Vector3,
 } from "@minecraft/server";
-import { parkourEventHandler } from "../utils/parkour-event-handler.class";
+import { parkourEventHandler } from "../classes/parkour-event-handler.class";
 import { calculatePlayerToBlockDistance } from "../utils/positional.utils";
 import { calculateVelocityImpulse } from "../utils/impulse.utils";
 import {

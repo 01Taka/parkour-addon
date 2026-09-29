@@ -6,7 +6,7 @@ import {
   Direction,
   type Vector3,
 } from "@minecraft/server";
-import { parkourEventHandler } from "../utils/parkour-event-handler.class";
+import { parkourEventHandler } from "../classes/parkour-event-handler.class";
 import { hasBlockCollisionFromFace } from "../utils/collision.utils";
 import { calculateLiftImpulseAccurate } from "../utils/impulse.utils";
 
