@@ -5,6 +5,8 @@ import {
   EquipmentSlot,
   Direction,
   ItemStack,
+  type Vector3,
+  type BlockRaycastOptions,
 } from "@minecraft/server";
 import { PlayerStateManager } from "./player-state-manager.class";
 
@@ -45,6 +47,26 @@ export interface ParkourHitBlockEvent {
   readonly hitBlock: Block;
   readonly hitFace: Direction;
 }
+
+/**
+ * 腕スイング時のレイキャストヒットブロックイベント情報（ParkourHitBlockEvent の亜種）
+ */
+export interface ParkourSwingHitBlockEvent extends ParkourHitBlockEvent {
+  /** ヒットした面のローカル座標 */
+  readonly faceLocation?: Vector3;
+}
+
+export type ParkourRaycastHitBlockEvent = ParkourSwingHitBlockEvent;
+
+/** スイング時のレイキャスト最大探索距離（ブロック） */
+export const SWING_RAYCAST_MAX_DISTANCE = 5;
+
+/** スイング時のレイキャスト設定（草・花等のすり抜け可能ブロックおよび水・溶岩をすり抜ける） */
+export const SWING_RAYCAST_OPTIONS: BlockRaycastOptions = {
+  maxDistance: SWING_RAYCAST_MAX_DISTANCE,
+  includeLiquidBlocks: false, // 水や液体をすり抜ける
+  includePassableBlocks: false, // 草やすり抜け可能ブロックをすり抜ける
+};
 
 /**
  * スイング（素振り・開始）時のパルクールイベント情報
@@ -104,6 +126,15 @@ export class ParkourEventHandler {
   /** 腕スイングトリガー（空中やブロックのない場所でも発火） */
   public readonly onSwingStart =
     new ParkourEventSignal<ParkourSwingStartEvent>();
+
+  /** 腕スイング時のレイキャストによるブロックヒットトリガー（草や水をすり抜け、最大5ブロック） */
+  public readonly onSwingHitBlock =
+    new ParkourEventSignal<ParkourSwingHitBlockEvent>();
+
+  /** onSwingHitBlock のエイリアス */
+  public get onRaycastHitBlock(): ParkourEventSignal<ParkourSwingHitBlockEvent> {
+    return this.onSwingHitBlock;
+  }
 
   private static readonly _instance = new ParkourEventHandler();
 
@@ -221,7 +252,7 @@ export class ParkourEventHandler {
       console.warn("entityHitBlock subscription failed:", e);
     }
 
-    // 2. playerSwingStart: スイング（空振り・開始）イベント -> onSwingStart
+    // 2. playerSwingStart: スイング（空振り・開始）イベント -> onSwingStart, onSwingHitBlock
     try {
       if (world.afterEvents.playerSwingStart) {
         world.afterEvents.playerSwingStart.subscribe((event) => {
@@ -229,6 +260,20 @@ export class ParkourEventHandler {
           if (!player.isValid) return;
 
           this.onSwingStart.dispatch({ player });
+
+          try {
+            const hit = player.getBlockFromViewDirection(SWING_RAYCAST_OPTIONS);
+            if (hit) {
+              this.onSwingHitBlock.dispatch({
+                player,
+                hitBlock: hit.block,
+                hitFace: hit.face,
+                faceLocation: hit.faceLocation,
+              });
+            }
+          } catch (rayErr) {
+            console.warn("playerSwingHitBlock raycast failed:", rayErr);
+          }
         });
       }
     } catch (e) {
