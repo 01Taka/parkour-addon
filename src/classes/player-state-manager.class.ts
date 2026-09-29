@@ -25,11 +25,7 @@ export class PlayerStateManager {
    * @param key 取得したいキー名
    * @param fallback 値が存在しなかった場合のデフォルト値
    */
-  public static get<T>(
-    playerId: string,
-    key: string,
-    fallback?: T,
-  ): T | undefined {
+  public static get<T>(playerId: string, key: string, fallback: T): T {
     const playerMap = this.state.get(playerId);
     if (!playerMap || !playerMap.has(key)) {
       return fallback;
