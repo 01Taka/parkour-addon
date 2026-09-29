@@ -9,6 +9,7 @@ import {
 import { parkourEventHandler } from "../classes/parkour-event-handler.class";
 import { hasBlockCollisionFromFace } from "../utils/collision.utils";
 import { calculateLiftImpulseAccurate } from "../utils/physics.utils";
+import { ADDON_KEYS } from "../classes/settings-ui-manager.class";
 
 // ==========================================
 // 定数・パラメータ設定
@@ -91,6 +92,11 @@ export function tryTriggerVolt(
   hitBlock: Block,
   hitFace: Direction,
 ): boolean {
+  // 0. アドオン発動条件チェック
+  if (!parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.volt)) {
+    return false;
+  }
+
   const currentTick = system.currentTick;
   const state = voltStates.get(player.id);
 

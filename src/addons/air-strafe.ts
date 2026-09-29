@@ -4,10 +4,11 @@ import {
   InputButton,
   ButtonState,
   Player,
-  EquipmentSlot,
 } from "@minecraft/server";
 import { isSliding } from "./sliding";
 import { calculateVelocityImpulse } from "../utils/physics.utils";
+import { ADDON_KEYS } from "../classes/settings-ui-manager.class";
+import { parkourEventHandler } from "../classes/parkour-event-handler.class";
 
 // ==========================================
 // 定数定義・パラメータ設定
@@ -36,24 +37,6 @@ export const STRAFE_INPUT_THRESHOLD = 0.2;
 
 /** キーが離されている（ニュートラル）と判定する MovementVector.x の閾値 */
 export const INPUT_NEUTRAL_THRESHOLD = 0.2;
-
-/**
- * プレイヤーがメインハンドに羽（検証用無効化アイテム）を持っているか判定します。
- */
-export function isHoldingFeather(player: Player): boolean {
-  try {
-    const equippable = player.getComponent("minecraft:equippable");
-    const mainHandItem = equippable
-      ? equippable.getEquipment(EquipmentSlot.Mainhand)
-      : player
-          .getComponent("minecraft:inventory")
-          ?.container?.getItem(player.selectedSlotIndex);
-
-    return mainHandItem?.typeId === "minecraft:feather";
-  } catch {
-    return false;
-  }
-}
 
 // ==========================================
 // 状態管理
@@ -149,14 +132,13 @@ export function airStrafeMain(): void {
         continue;
       }
 
-      // スライディングが開始された場合はキャンセル
-      if (isSliding(player.id)) {
+      if (!parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.airStrafe)) {
         activeAirStrafes.delete(player.id);
         continue;
       }
 
-      // 羽を持っている場合はキャンセル（検証用）
-      if (isHoldingFeather(player)) {
+      // スライディングが開始された場合はキャンセル
+      if (isSliding(player.id)) {
         activeAirStrafes.delete(player.id);
         continue;
       }
@@ -289,10 +271,10 @@ export function airStrafeMain(): void {
 
         // 発動条件チェック
         if (
+          !parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.airStrafe) ||
           !player.isSprinting ||
           currentVelocity.y <= 0 ||
-          isSliding(player.id) ||
-          isHoldingFeather(player)
+          isSliding(player.id)
         ) {
           return;
         }

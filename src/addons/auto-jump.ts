@@ -9,6 +9,8 @@ import {
 } from "../utils/physics.utils";
 import { PlayerStateManager } from "../classes/player-state-manager.class";
 import { PlayerDirectionResolver } from "../classes/player-direction-resolver.class";
+import { ADDON_KEYS } from "../classes/settings-ui-manager.class";
+import { parkourEventHandler } from "../classes/parkour-event-handler.class";
 
 /**
  * プレイヤー設定の型定義
@@ -184,6 +186,10 @@ function matchesAngleCondition(
 export function autoJumpMain() {
   system.runInterval(() => {
     for (const player of world.getAllPlayers()) {
+      if (!parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.autoJump)) {
+        continue;
+      }
+
       const canAutoJump = PlayerStateManager.get(
         player.id,
         AUTO_JUMP.keys.canJump,

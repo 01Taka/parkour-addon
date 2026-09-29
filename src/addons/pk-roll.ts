@@ -8,6 +8,7 @@ import {
   type Vector3,
 } from "@minecraft/server";
 import { parkourEventHandler } from "../classes/parkour-event-handler.class";
+import { ADDON_KEYS } from "../classes/settings-ui-manager.class";
 
 // ==========================================
 // 定数・パラメータ設定
@@ -204,6 +205,11 @@ export function applyRollImpulse(player: Player): void {
  * 6. かかと位置から下方向のレイが固体ブロックにヒットすること
  */
 export function tryTriggerPkRoll(player: Player): boolean {
+  // 0. アドオン発動条件チェック
+  if (!parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.pkRoll)) {
+    return false;
+  }
+
   const currentTick = system.currentTick;
   const state = rollStates.get(player.id);
 
@@ -334,6 +340,8 @@ export function pkRollMain(): void {
     if (!(event.hurtEntity instanceof Player)) return;
     const player = event.hurtEntity;
     if (!player.isValid) return;
+
+    if (!parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.pkRoll)) return;
 
     // プログラム自身が保留解除後に与えたダメージはスルーして無限ループを防止
     if (isApplyingCustomFallDamage.has(player.id)) {

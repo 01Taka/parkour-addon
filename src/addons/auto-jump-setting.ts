@@ -1,12 +1,13 @@
-import { Player, system, world } from "@minecraft/server";
+import { Player } from "@minecraft/server";
 import { ModalFormData } from "@minecraft/server-ui";
 import { PlayerStateManager } from "../classes/player-state-manager.class";
+import type { FormGroup } from "../classes/settings-ui-manager.class";
 import {
   AUTO_JUMP,
   type AutoJumpAngle,
   type AutoJumpHeight,
   type AutoJumpMovement,
-} from "./auto-jump"; // ※パスは実際の環境に合わせてください
+} from "./auto-jump";
 
 /**
  * 選択肢の一覧
@@ -16,87 +17,82 @@ const ANGLE_OPTIONS: readonly AutoJumpAngle[] = ["narrow", "wide", "all"];
 const MOVEMENT_OPTIONS: readonly AutoJumpMovement[] = ["sprint", "walk", "any"];
 
 /**
- * 設定UI用のアイテムID
+ * SettingsUIManager用のオートジャンプ設定フォームグループ
  */
-const SETTINGS_TRIGGER_ITEM_ID = "minecraft:feather";
-
-/**
- * オートジャンプ設定画面を開く
- */
-export async function openAutoJumpSettings(player: Player) {
-  // 現在の設定値を取得
-  const currentHeight = PlayerStateManager.get<AutoJumpHeight>(
-    player.id,
-    AUTO_JUMP.keys.height,
-    AUTO_JUMP.defaults.height,
-  );
-  const currentAngle = PlayerStateManager.get<AutoJumpAngle>(
-    player.id,
-    AUTO_JUMP.keys.angle,
-    AUTO_JUMP.defaults.angle,
-  );
-  const currentMovement = PlayerStateManager.get<AutoJumpMovement>(
-    player.id,
-    AUTO_JUMP.keys.movement,
-    AUTO_JUMP.defaults.movement,
-  );
-
-  // ドロップダウンの初期選択インデックスを算出
-  const defaultHeightIndex = Math.max(0, HEIGHT_OPTIONS.indexOf(currentHeight));
-  const defaultAngleIndex = Math.max(0, ANGLE_OPTIONS.indexOf(currentAngle));
-  const defaultMovementIndex = Math.max(
-    0,
-    MOVEMENT_OPTIONS.indexOf(currentMovement),
-  );
-
-  // フォームの構築（第3引数を ModalFormDataDropdownOptions に対応）
-  const form = new ModalFormData()
-    .title("オートジャンプ設定")
-    .dropdown(
-      "ジャンプの高さ",
-      ["fit (1.05ブロック)", "normal (1.25ブロック)"],
-      { defaultValueIndex: defaultHeightIndex },
-    )
-    .dropdown(
-      "発動する角度",
-      ["narrow (正面30°)", "wide (120°)", "all (360°/条件スキップ)"],
-      { defaultValueIndex: defaultAngleIndex },
-    )
-    .dropdown(
-      "発動する移動条件",
-      ["sprint (ダッシュ中)", "walk (歩行/非スニーク)", "any (いつでも)"],
-      { defaultValueIndex: defaultMovementIndex },
+export const autoJumpFormGroup: FormGroup = {
+  id: "auto_jump_settings",
+  title: "§6オートジャンプ詳細設定",
+  formTitle: "オートジャンプ詳細設定",
+  build: (player: Player, form: ModalFormData) => {
+    // 現在の設定値を取得
+    const currentHeight = PlayerStateManager.get<AutoJumpHeight>(
+      player.id,
+      AUTO_JUMP.keys.height,
+      AUTO_JUMP.defaults.height,
+    );
+    const currentAngle = PlayerStateManager.get<AutoJumpAngle>(
+      player.id,
+      AUTO_JUMP.keys.angle,
+      AUTO_JUMP.defaults.angle,
+    );
+    const currentMovement = PlayerStateManager.get<AutoJumpMovement>(
+      player.id,
+      AUTO_JUMP.keys.movement,
+      AUTO_JUMP.defaults.movement,
     );
 
-  const response = await form.show(player);
-  if (response.canceled || !response.formValues) return;
+    // ドロップダウンの初期選択インデックスを算出
+    const defaultHeightIndex = Math.max(0, HEIGHT_OPTIONS.indexOf(currentHeight));
+    const defaultAngleIndex = Math.max(0, ANGLE_OPTIONS.indexOf(currentAngle));
+    const defaultMovementIndex = Math.max(
+      0,
+      MOVEMENT_OPTIONS.indexOf(currentMovement),
+    );
 
-  const [selectedHeightIdx, selectedAngleIdx, selectedMovementIdx] =
-    response.formValues as [number, number, number];
+    return form
+      .dropdown(
+        "ジャンプの高さ",
+        ["fit (1.05ブロック)", "normal (1.25ブロック)"],
+        { defaultValueIndex: defaultHeightIndex },
+      )
+      .dropdown(
+        "発動する角度",
+        ["narrow (正面30°)", "wide (120°)", "all (360°/条件スキップ)"],
+        { defaultValueIndex: defaultAngleIndex },
+      )
+      .dropdown(
+        "発動する移動条件",
+        ["sprint (ダッシュ中)", "walk (歩行/非スニーク)", "any (いつでも)"],
+        { defaultValueIndex: defaultMovementIndex },
+      );
+  },
+  onSave: (player: Player, formValues: any[]) => {
+    const [selectedHeightIdx, selectedAngleIdx, selectedMovementIdx] =
+      formValues as [number, number, number];
 
-  const newHeight = HEIGHT_OPTIONS[selectedHeightIdx];
-  const newAngle = ANGLE_OPTIONS[selectedAngleIdx];
-  const newMovement = MOVEMENT_OPTIONS[selectedMovementIdx];
+    const newHeight = HEIGHT_OPTIONS[selectedHeightIdx] ?? AUTO_JUMP.defaults.height;
+    const newAngle = ANGLE_OPTIONS[selectedAngleIdx] ?? AUTO_JUMP.defaults.angle;
+    const newMovement =
+      MOVEMENT_OPTIONS[selectedMovementIdx] ?? AUTO_JUMP.defaults.movement;
 
-  // 設定を保存
-  PlayerStateManager.set(player.id, AUTO_JUMP.keys.height, newHeight);
-  PlayerStateManager.set(player.id, AUTO_JUMP.keys.angle, newAngle);
-  PlayerStateManager.set(player.id, AUTO_JUMP.keys.movement, newMovement);
+    // 設定を保存
+    PlayerStateManager.set(player.id, AUTO_JUMP.keys.height, newHeight);
+    PlayerStateManager.set(player.id, AUTO_JUMP.keys.angle, newAngle);
+    PlayerStateManager.set(player.id, AUTO_JUMP.keys.movement, newMovement);
 
-  player.sendMessage(
-    `§a[AutoJump] 設定を保存しました\n§7- 高さ: §f${newHeight}\n§7- 角度: §f${newAngle}\n§7- 移動: §f${newMovement}`,
-  );
-}
+    player.sendMessage(
+      `§a[AutoJump] 設定を保存しました\n§7- 高さ: §f${newHeight}\n§7- 角度: §f${newAngle}\n§7- 移動: §f${newMovement}`,
+    );
+  },
+};
 
 /**
- * 羽を右クリックした際の設定画面呼び出しリスナーを登録
+ * （後方互換用）単体でオートジャンプ設定画面を開く関数
  */
-export function registerAutoJumpSettingsListener() {
-  world.afterEvents.itemUse.subscribe((event) => {
-    if (event.itemStack.typeId === SETTINGS_TRIGGER_ITEM_ID) {
-      system.run(() => {
-        openAutoJumpSettings(event.source);
-      });
-    }
-  });
+export async function openAutoJumpSettings(player: Player): Promise<void> {
+  const form = new ModalFormData().title(autoJumpFormGroup.formTitle ?? autoJumpFormGroup.title);
+  const builtForm = await autoJumpFormGroup.build(player, form);
+  const response = await builtForm.show(player);
+  if (response.canceled || !response.formValues) return;
+  await autoJumpFormGroup.onSave(player, response.formValues);
 }

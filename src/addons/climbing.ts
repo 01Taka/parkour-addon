@@ -13,6 +13,7 @@ import {
   hasBlockCollisionFromAirFaces,
   hasBlockCollisionFromFace,
 } from "../utils/collision.utils";
+import { ADDON_KEYS } from "../classes/settings-ui-manager.class";
 
 // ==========================================
 // 定数・パラメータ設定
@@ -130,6 +131,9 @@ export function tryClimbUp(
   hitBlock: Block,
   hitFace: Direction,
 ): void {
+  // 0. アドオン発動条件チェック
+  if (!parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.climbing)) return;
+
   // 1. 接地判定（最頻出かつプロパティ参照のみで最軽量）
   if (player.isOnGround) return;
 

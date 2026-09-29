@@ -9,6 +9,7 @@ import {
 import { calculateVelocityImpulse } from "../utils/physics.utils";
 import { calculatePlayerToBlockDistance } from "../utils/player.utils";
 import { parkourEventHandler } from "../classes/parkour-event-handler.class";
+import { ADDON_KEYS } from "../classes/settings-ui-manager.class";
 
 /** スライディング時に加算する速度 (ブロック/tick) */
 export const SLIDE_ADDITIONAL_SPEED = 0.25;
@@ -61,6 +62,11 @@ function isGroundBlock(player: Player, blockLoc: Vector3): boolean {
  * プレイヤーのスライディング処理を開始します。
  */
 function tryStartSliding(player: Player): void {
+  // 0. アドオン発動条件チェック
+  if (!parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.sliding)) {
+    return;
+  }
+
   // 既にスライディングまたはスライディングジャンプ中の場合は多重発動しない
   if (activeSlides.has(player.id)) {
     return;
@@ -104,6 +110,11 @@ export function slidingMain(): void {
       if (!slideState) continue;
 
       if (!player.isValid) {
+        activeSlides.delete(player.id);
+        continue;
+      }
+
+      if (!parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.sliding)) {
         activeSlides.delete(player.id);
         continue;
       }
