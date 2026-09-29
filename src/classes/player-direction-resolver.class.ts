@@ -83,12 +83,13 @@ export class PlayerDirectionResolver {
     return this._movement;
   }
 
-  /** ローカル入力方向（スティック / WASD そのまま: x=左右, z=前後） */
+  /** ローカル入力方向（一般的な3Dローカル座標系: x=右(+)/左(-), z=前(+)/後(-)） */
   public get input(): DirectionData {
     this.checkTick();
     if (!this._input) {
       const raw = this.player.inputInfo.getMovementVector();
-      this._input = calcData({ x: raw.x, y: 0, z: raw.y });
+      // Minecraft の raw.x は左が正(+)のため、反転して右を正(+)にする
+      this._input = calcData({ x: -raw.x, y: 0, z: raw.y });
     }
     return this._input;
   }
@@ -115,9 +116,12 @@ export class PlayerDirectionResolver {
         const rightX = -forwardZ;
         const rightZ = forwardX;
 
-        // 前後入力(raw.y) と 左右入力(raw.x) をワールド空間で合成
-        const worldX = forwardX * raw.y + rightX * raw.x;
-        const worldZ = forwardZ * raw.y + rightZ * raw.x;
+        // Minecraft の raw.x は「左が正(+)、右が負(-)」のため、反転して「右を正(+)」にする
+        const strafeRight = -raw.x;
+
+        // 前後入力(raw.y) と 左右入力(strafeRight) をワールド空間で合成
+        const worldX = forwardX * raw.y + rightX * strafeRight;
+        const worldZ = forwardZ * raw.y + rightZ * strafeRight;
 
         this._worldInput = calcData({ x: worldX, y: 0, z: worldZ });
       }

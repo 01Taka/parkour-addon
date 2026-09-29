@@ -17,6 +17,6 @@ export function getMovementInputAngle(target: Player | Vector2): number | null {
     return null;
   }
 
-  // 前方 (0, 1) を基準とし、右を正(+)、左を負(-)とするラジアンを計算
-  return Math.atan2(vec.x, vec.y);
+  // Minecraft の raw.x は左が正(+)、右が負(-)のため、-vec.x で反転して「右を正(+)、左を負(-)」として計算
+  return Math.atan2(-vec.x, vec.y);
 }

@@ -100,6 +100,3 @@ export function registerAutoJumpSettingsListener() {
     }
   });
 }
-
-// ファイル読み込み時に自動登録
-registerAutoJumpSettingsListener();
