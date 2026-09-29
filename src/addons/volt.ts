@@ -8,7 +8,7 @@ import {
 } from "@minecraft/server";
 import { parkourEventHandler } from "../classes/parkour-event-handler.class";
 import { hasBlockCollisionFromFace } from "../utils/collision.utils";
-import { calculateLiftImpulseAccurate } from "../utils/impulse.utils";
+import { calculateLiftImpulseAccurate } from "../utils/physics.utils";
 
 // ==========================================
 // 定数・パラメータ設定

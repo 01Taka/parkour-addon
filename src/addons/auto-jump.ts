@@ -1,14 +1,13 @@
 import { Player, system, world } from "@minecraft/server";
-import { getPlayerAABB } from "../utils/positional.utils";
-import { getNearestFaceSegment } from "../utils/direction.utils";
+import { getNearestFaceSegment } from "../utils/geometry.utils";
+import { getPlayerAABB, getMovementInputAngle } from "../utils/player.utils";
 import { calculateDistanceToHitFace } from "../utils/collision.utils";
 import {
   type LiftImpulseResult,
   calculateLiftImpulseAccurate,
   calculateVelocityImpulse,
-} from "../utils/impulse.utils";
+} from "../utils/physics.utils";
 import { PlayerStateManager } from "../classes/player-state-manager.class";
-import { getMovementInputAngle } from "../utils/input.utils";
 import { PlayerDirectionResolver } from "../classes/player-direction-resolver.class";
 
 /**

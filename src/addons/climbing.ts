@@ -7,8 +7,8 @@ import {
   type Vector3,
 } from "@minecraft/server";
 import { parkourEventHandler } from "../classes/parkour-event-handler.class";
-import { calculatePlayerToBlockDistance } from "../utils/positional.utils";
-import { calculateVelocityImpulse } from "../utils/impulse.utils";
+import { calculatePlayerToBlockDistance } from "../utils/player.utils";
+import { calculateVelocityImpulse } from "../utils/physics.utils";
 import {
   hasBlockCollisionFromAirFaces,
   hasBlockCollisionFromFace,

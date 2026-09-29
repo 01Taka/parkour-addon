@@ -11,7 +11,7 @@ export type DragPreset =
   | "none"; // 抵抗なし (1.00)
 
 /** 各プリセットの物理数値マップ */
-const DRAG_PRESETS: Record<DragPreset, { y: number; xz: number }> = {
+export const DRAG_PRESETS: Record<DragPreset, { y: number; xz: number }> = {
   air: { y: 0.98, xz: 0.91 },
   water: { y: 0.8, xz: 0.8 },
   lava: { y: 0.5, xz: 0.5 },

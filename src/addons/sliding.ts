@@ -6,8 +6,8 @@ import {
   Player,
   type Vector3,
 } from "@minecraft/server";
-import { calculateVelocityImpulse } from "../utils/impulse.utils";
-import { calculatePlayerToBlockDistance } from "../utils/positional.utils";
+import { calculateVelocityImpulse } from "../utils/physics.utils";
+import { calculatePlayerToBlockDistance } from "../utils/player.utils";
 import { parkourEventHandler } from "../classes/parkour-event-handler.class";
 
 /** スライディング時に加算する速度 (ブロック/tick) */

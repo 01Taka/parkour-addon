@@ -1,10 +1,22 @@
-import { type Block, type Player, type Vector3 } from "@minecraft/server";
+import type { Vector3 } from "@minecraft/server";
 
+export type Vec2 = { x: number; z: number };
+
+/** 2次元AABB (XZ平面) */
+export interface AABB2D {
+  /** 最小点 (minX, minZ) */
+  min: Vec2;
+  /** 最大点 (maxX, maxZ) */
+  max: Vec2;
+}
+
+/** 3次元AABB */
 export interface AABB {
   min: Vector3;
   max: Vector3;
 }
 
+/** AABBとの距離計算結果 */
 export interface AABBDistanceResult {
   /** XZ平面（水平方向）のAABB最短距離 */
   horizontal: number;
@@ -68,55 +80,72 @@ export function calculatePointToAABBDistance(
 }
 
 /**
- * プレイヤー（足元位置）と対象ブロックのAABBとの距離を計算します。
- * ブロックは通常 [x, x+1], [y, y+1], [z, z+1] の1x1x1立方体として扱います。
+ * 水平ベクトルから最も近い面方向（東西南北）の単位ベクトルを返します。
  *
- * @param player 対象プレイヤー
- * @param block 対象ブロック（Block または Vector3 座標）
- * @returns 水平距離(horizontal)、垂直距離(vertical)、直線距離(distance)を含む計算結果
+ * @param vec 水平方向ベクトル (x, z)
+ * @returns 最も近い面方向の単位Vector3
  */
-export function calculatePlayerToBlockDistance(
-  player: Player,
-  block: Block | Vector3,
-): AABBDistanceResult {
-  const blockLoc = "location" in block ? block.location : block;
+export function getNearestFaceDirection(vec: Vec2): Vector3 {
+  const absX = Math.abs(vec.x);
+  const absZ = Math.abs(vec.z);
 
-  const aabb: AABB = {
-    min: {
-      x: blockLoc.x,
-      y: blockLoc.y,
-      z: blockLoc.z,
-    },
-    max: {
-      x: blockLoc.x + 1,
-      y: blockLoc.y + 1,
-      z: blockLoc.z + 1,
-    },
-  };
+  if (absX === 0 && absZ === 0) {
+    return { x: 0, y: 0, z: 0 };
+  }
 
-  return calculatePointToAABBDistance(player.location, aabb);
+  if (absX >= absZ) {
+    return { x: Math.sign(vec.x), y: 0, z: 0 };
+  } else {
+    return { x: 0, y: 0, z: Math.sign(vec.z) };
+  }
 }
 
 /**
- * プレイヤーのワールド座標系 AABB（境界ボックス）を取得します。
- * スニーク、泳ぎ、エリトラ滑空、睡眠などの姿勢変化に対応しています。
- *
- * @param player 対象のプレイヤー
- * @returns 最小座標 (min) と 最大座標 (max)
+ * ベクトルの向きに一番近いAABBの面（辺）の両端の座標を返す
+ * @param aabb 対象のAABB
+ * @param vec 方向ベクトル
+ * @param shrink AABBを内側に縮小する量（デフォルト: 0）
  */
-export function getPlayerAABB(player: Player): AABB {
-  const rawAABB = player.getAABB();
-  const { center, extent } = rawAABB;
-  return {
-    min: {
-      x: center.x - extent.x,
-      y: center.y - extent.y,
-      z: center.z - extent.z,
-    },
-    max: {
-      x: center.x + extent.x,
-      y: center.y + extent.y,
-      z: center.z + extent.z,
-    },
-  };
+export function getNearestFaceSegment(
+  aabb: AABB2D,
+  vec: Vec2,
+  shrink: number = 0,
+): [Vec2, Vec2] | [] {
+  const dir = getNearestFaceDirection(vec);
+
+  if (dir.x === 0 && dir.z === 0) {
+    return [];
+  }
+
+  // 縮小後の境界座標を計算
+  const minX = aabb.min.x + shrink;
+  const maxX = aabb.max.x - shrink;
+  const minZ = aabb.min.z + shrink;
+  const maxZ = aabb.max.z - shrink;
+
+  if (dir.x > 0) {
+    // +X 面
+    return [
+      { x: maxX, z: minZ },
+      { x: maxX, z: maxZ },
+    ];
+  } else if (dir.x < 0) {
+    // -X 面
+    return [
+      { x: minX, z: minZ },
+      { x: minX, z: maxZ },
+    ];
+  } else if (dir.z > 0) {
+    // +Z 面
+    return [
+      { x: minX, z: maxZ },
+      { x: maxX, z: maxZ },
+    ];
+  } else {
+    // -Z 面
+    return [
+      { x: minX, z: minZ },
+      { x: maxX, z: minZ },
+    ];
+  }
 }

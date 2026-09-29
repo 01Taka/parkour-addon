@@ -7,7 +7,7 @@ import {
   EquipmentSlot,
 } from "@minecraft/server";
 import { isSliding } from "./sliding";
-import { calculateVelocityImpulse } from "../utils/impulse.utils";
+import { calculateVelocityImpulse } from "../utils/physics.utils";
 
 // ==========================================
 // 定数定義・パラメータ設定
