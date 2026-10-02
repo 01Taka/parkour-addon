@@ -62,18 +62,19 @@ export const DEFAULT_ADDONS: readonly AddonInfo[] = [
     description: "着地直前に腕を振ることで落下ダメージを軽減・前進します",
     defaultMode: "always",
   },
-  {
-    key: ADDON_KEYS.volt,
-    name: "ヴォルト (Volt)",
-    description: "ブロックの側面を殴ることで飛び越えるように跳ねます",
-    defaultMode: "always",
-  },
-  {
-    key: ADDON_KEYS.sliding,
-    name: "スライディング (Sliding)",
-    description: "足元ブロックを殴ることで滑り込みます",
-    defaultMode: "always",
-  },
+  // 未完成のため無効化・設定画面から除外
+  // {
+  //   key: ADDON_KEYS.volt,
+  //   name: "ヴォルト (Volt)",
+  //   description: "ブロックの側面を殴ることで飛び越えるように跳ねます",
+  //   defaultMode: "always",
+  // },
+  // {
+  //   key: ADDON_KEYS.sliding,
+  //   name: "スライディング (Sliding)",
+  //   description: "足元ブロックを殴ることで滑り込みます",
+  //   defaultMode: "always",
+  // },
 ] as const;
 
 /**

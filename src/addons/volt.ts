@@ -26,6 +26,9 @@ export const VOLT_IMPULSE_FORWARD = 0.2;
 /** 再度発動可能になるまでのクールダウン（tick） */
 export const VOLT_COOLDOWN_TICKS = 1;
 
+/** ヴォルト機能の有効フラグ（未完成のため無効化中） */
+export const IS_VOLT_ENABLED = false;
+
 // ==========================================
 // 状態管理
 // ==========================================
@@ -92,6 +95,11 @@ export function tryTriggerVolt(
   hitBlock: Block,
   hitFace: Direction,
 ): boolean {
+  // 未完成のため無効化
+  if (!IS_VOLT_ENABLED) {
+    return false;
+  }
+
   // 0. アドオン発動条件チェック
   if (!parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.volt)) {
     return false;
@@ -136,6 +144,11 @@ export function tryTriggerVolt(
 // ==========================================
 
 export function voltMain(): void {
+  // 未完成のため無効化
+  if (!IS_VOLT_ENABLED) {
+    return;
+  }
+
   // ブロック殴打イベント購読
   parkourEventHandler.onHitBlock.subscribe(({ player, hitBlock, hitFace }) => {
     tryTriggerVolt(player, hitBlock, hitFace);

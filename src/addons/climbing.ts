@@ -196,10 +196,12 @@ export function climbingMain() {
     }
   }, 1);
 
-  // 2. ブロック殴打イベント購読
-  parkourEventHandler.onHitBlock.subscribe(({ player, hitBlock, hitFace }) => {
-    tryClimbUp(player, hitBlock, hitFace);
-  });
+  // 2. スイング時ブロックヒットイベント購読（草や水をすり抜けて視線先5ブロック以内のブロックヒットを検知）
+  parkourEventHandler.onSwingHitBlock.subscribe(
+    ({ player, hitBlock, hitFace }) => {
+      tryClimbUp(player, hitBlock, hitFace);
+    },
+  );
 
   // 3. プレイヤー切断時のクリーンアップ
   world.afterEvents.playerLeave.subscribe((event) => {

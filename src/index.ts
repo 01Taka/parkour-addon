@@ -3,22 +3,22 @@ import { climbingMain } from "./addons/climbing";
 import { pkRollMain } from "./addons/pk-roll";
 import { autoJumpMain } from "./addons/auto-jump";
 import { autoJumpFormGroup } from "./addons/auto-jump-setting";
-import { voltMain } from "./addons/volt";
-import { subscribeBlockHitDebugMessage } from "./utils/debug.utils";
+// import { subscribeBlockHitDebugMessage } from "./utils/debug.utils";
 import { settingsUIManager } from "./classes/settings-ui-manager.class";
 import { PlayerStateManager } from "./classes/player-state-manager.class";
 
 // メモリ解放リスナーの登録
 PlayerStateManager.registerAutoCleanup();
 
-// 各アドオン機能の初期化
+// 各アドオン機能の初期化（未完成の sliding, volt は無効化）
 // slidingMain();
+// voltMain();
 airStrafeMain();
 autoJumpMain();
 climbingMain();
 pkRollMain();
-voltMain();
-subscribeBlockHitDebugMessage();
+
+// subscribeBlockHitDebugMessage();
 
 // 汎用設定UIの初期化
 // 1. デフォルトのアドオンON/OFFトグル設定タブを追加

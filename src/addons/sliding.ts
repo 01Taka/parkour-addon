@@ -34,12 +34,18 @@ interface SlidingState {
   hasLeftGround?: boolean;
 }
 
+/** スライディング機能の有効フラグ（未完成のため無効化中） */
+export const IS_SLIDING_ENABLED = false;
+
 const activeSlides = new Map<string, SlidingState>();
 
 /**
  * プレイヤーがスライディング（またはスライディングジャンプ）中であるかを判定します。
  */
 export function isSliding(playerId: string): boolean {
+  if (!IS_SLIDING_ENABLED) {
+    return false;
+  }
   return activeSlides.has(playerId);
 }
 
@@ -62,6 +68,11 @@ function isGroundBlock(player: Player, blockLoc: Vector3): boolean {
  * プレイヤーのスライディング処理を開始します。
  */
 function tryStartSliding(player: Player): void {
+  // 未完成のため無効化
+  if (!IS_SLIDING_ENABLED) {
+    return;
+  }
+
   // 0. アドオン発動条件チェック
   if (!parkourEventHandler.isAddonAllowed(player, ADDON_KEYS.sliding)) {
     return;
@@ -101,6 +112,11 @@ function tryStartSliding(player: Player): void {
  * スライディング機能の初期化・メインループを開始します。
  */
 export function slidingMain(): void {
+  // 未完成のため無効化
+  if (!IS_SLIDING_ENABLED) {
+    return;
+  }
+
   // 1. 毎Tickごとの移動更新ループ
   system.runInterval(() => {
     if (activeSlides.size === 0) return;

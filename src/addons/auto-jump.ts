@@ -11,6 +11,10 @@ import { PlayerStateManager } from "../classes/player-state-manager.class";
 import { PlayerDirectionResolver } from "../classes/player-direction-resolver.class";
 import { ADDON_KEYS } from "../classes/settings-ui-manager.class";
 import { parkourEventHandler } from "../classes/parkour-event-handler.class";
+import {
+  globalJumpManager,
+  JumpContext,
+} from "../classes/jump-state-manager.class";
 
 /**
  * プレイヤー設定の型定義
@@ -25,7 +29,6 @@ export type AutoJumpMovement = "sprint" | "walk" | "any";
 export const AUTO_JUMP = {
   // PlayerStateManager 用キー
   keys: {
-    canJump: "autoJump_canAutoJump",
     brakeTick: "autoJump_brakeTick",
     height: "autoJump_height",
     angle: "autoJump_angle",
@@ -75,10 +78,10 @@ export const AUTO_JUMP = {
   },
 } as const;
 
-function applyJumpImpulse(player: Player, lift: LiftImpulseResult) {
+function tryApplyJumpImpulse(player: Player, lift: LiftImpulseResult): boolean {
   const dir = PlayerDirectionResolver.get(player).worldInput.normalizedXZ;
 
-  player.applyImpulse({
+  return globalJumpManager.tryApplyImpulse(player, JumpContext.GROUND, {
     x: dir.x * AUTO_JUMP.forwardImpulse,
     y: lift.impulse.y,
     z: dir.z * AUTO_JUMP.forwardImpulse,
@@ -190,18 +193,9 @@ export function autoJumpMain() {
         continue;
       }
 
-      const canAutoJump = PlayerStateManager.get(
-        player.id,
-        AUTO_JUMP.keys.canJump,
-        true,
-      );
-
-      if (player.isOnGround) {
-        if (!canAutoJump) {
-          PlayerStateManager.set(player.id, AUTO_JUMP.keys.canJump, true);
-          continue;
-        }
-
+      // 接地しており安定している状態（GROUND）の場合のみオートジャンプ判定を実行
+      // （離陸待機 TRANSITIONING や空中 AIRBORNE 中は連続ジャンプ回避のためスキップ）
+      if (globalJumpManager.getContext(player) === JumpContext.GROUND) {
         // --- プレイヤー設定の取得 ---
         const movementSetting = PlayerStateManager.get<AutoJumpMovement>(
           player.id,
@@ -249,8 +243,12 @@ export function autoJumpMain() {
           );
           if (states.some((state) => state.isFilled)) continue;
 
+          // インパルス付与（tryApplyJumpImpulseにより離陸待機ステートへ自動遷移）
+          const applied = tryApplyJumpImpulse(player, heightConfig.lift);
+
           // 段差上面の奥行き判定によるブレーキ予約
           if (
+            applied &&
             states[0] &&
             states[0].distance - distance <=
               AUTO_JUMP.detection.ledgeDepthThreshold
@@ -261,9 +259,6 @@ export function autoJumpMain() {
               system.currentTick + heightConfig.brakeDelayTicks,
             );
           }
-
-          PlayerStateManager.set(player.id, AUTO_JUMP.keys.canJump, false);
-          applyJumpImpulse(player, heightConfig.lift);
         }
       }
 
